@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>展示会見学リスト</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2F6F62">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="展示会見学リスト">
+<style>
+  :root{
+    --ink:#1E2A24;
+    --paper:#F3F1E9;
+    --paper-raised:#FFFFFF;
+    --line:#D8D3C4;
+    --accent:#2F6F62;
+    --accent-dark:#204B42;
+    --amber:#C98A2C;
+    --rust:#B5533C;
+    --muted:#6E6A5C;
+    --danger:#B5533C;
+    --shadow: 0 1px 2px rgba(30,42,36,0.08), 0 4px 12px rgba(30,42,36,0.06);
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  #app{
+    max-width:520px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--paper);
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+
+  /* Header */
+  header.bar{
+    position:sticky; top:0; z-index:20;
+    background:var(--ink);
+    color:var(--paper);
+    padding:16px 18px;
+    display:flex; align-items:center; gap:10px;
+  }
+  header.bar .back{
+    background:none; border:none; color:var(--paper);
+    font-size:20px; cursor:pointer; padding:2px 8px 2px 0;
+    line-height:1;
+  }
+  header.bar h1{
+    font-size:17px; font-weight:600; margin:0; letter-spacing:.02em;
+    flex:1;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  header.bar .sub{
+    font-size:12px; color:#C9CFC9; margin-top:2px;
+  }
+  header.bar .head-action{
+    background:none;border:1px solid rgba(243,241,233,.4); color:var(--paper);
+    border-radius:7px; padding:6px 9px; font-size:12.5px; cursor:pointer;
+    white-space:nowrap; flex-shrink:0;
+  }
+  header.bar .head-actions{
+    display:flex; gap:6px; flex-shrink:0;
+  }
+
+  main{
+    flex:1;
+    padding:14px 14px 100px;
+  }
+
+  /* Empty state */
+  .empty{
+    text-align:center;
+    padding:60px 20px;
+    color:var(--muted);
+  }
+  .empty .glyph{
+    font-size:34px; margin-bottom:10px; opacity:.6;
+  }
+  .empty p{ margin:4px 0; font-size:14px; line-height:1.6; }
+
+  /* Folder list */
+  .folder-card{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-left:4px solid var(--accent);
+    border-radius:var(--radius);
+    padding:14px 14px;
+    margin-bottom:10px;
+    display:flex; align-items:center; gap:12px;
+    cursor:pointer;
+    box-shadow:var(--shadow);
+  }
+  .folder-card:active{ transform:scale(0.99); }
+  .folder-card .fi{
+    flex:1; min-width:0;
+  }
+  .folder-card .fname{
+    font-size:15.5px; font-weight:600; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .folder-card .fmeta{
+    font-size:12px; color:var(--muted); margin-top:3px;
+  }
+  .folder-card .count{
+    font-size:12px; color:var(--paper-raised); background:var(--accent);
+    border-radius:20px; padding:3px 9px; font-weight:600; flex-shrink:0;
+  }
+  .folder-card .del{
+    background:none;border:none; color:var(--muted); font-size:16px; padding:4px 2px; cursor:pointer; flex-shrink:0;
+  }
+
+  /* Entry cards */
+  .entry-card{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:12px;
+    margin-bottom:10px;
+    display:flex; gap:12px;
+    cursor:pointer;
+    box-shadow:var(--shadow);
+  }
+  .entry-card:active{ transform:scale(0.99); }
+  .entry-thumb{
+    width:56px; height:56px; border-radius:8px; flex-shrink:0;
+    background:var(--paper) center/cover no-repeat;
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-size:11px;
+  }
+  .entry-info{ flex:1; min-width:0; }
+  .entry-top{ display:flex; align-items:center; gap:8px; }
+  .entry-tags{ display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+  .entry-company{
+    font-size:15px; font-weight:600; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;
+  }
+  .tag{
+    font-size:11px; font-weight:600; padding:3px 8px; border-radius:20px; color:#fff; flex-shrink:0;
+    white-space:nowrap;
+  }
+  .tag.catalog{ background:var(--accent); }
+  .tag.meishi{ background:var(--amber); }
+  .tag.followup{ background:var(--rust); }
+  .entry-meta{ font-size:12px; color:var(--muted); margin-top:4px; }
+  .entry-memo{ font-size:12.5px; color:var(--ink); margin-top:5px; opacity:.8;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+
+  /* FAB */
+  .fab{
+    position:fixed;
+    left:50%; transform:translateX(calc(-260px + 100%));
+    bottom:24px;
+    max-width:520px;
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    width:56px; height:56px;
+    border-radius:50%;
+    font-size:26px;
+    box-shadow:0 4px 14px rgba(32,75,66,0.4);
+    cursor:pointer;
+    z-index:15;
+    display:flex; align-items:center; justify-content:center;
+  }
+  @media (max-width:520px){
+    .fab{ left:auto; right:20px; transform:none; }
+  }
+
+  /* Overlay / forms */
+  .overlay{
+    position:fixed; inset:0; background:rgba(20,26,22,0.45);
+    z-index:50; display:flex; align-items:flex-end; justify-content:center;
+  }
+  .sheet{
+    background:var(--paper);
+    width:100%; max-width:520px;
+    max-height:92vh;
+    border-radius:16px 16px 0 0;
+    overflow-y:auto;
+    padding-bottom:24px;
+    animation: rise .18s ease-out;
+  }
+  @keyframes rise{ from{ transform:translateY(16px); opacity:0;} to{transform:translateY(0); opacity:1;} }
+  .sheet-head{
+    position:sticky; top:0; background:var(--paper);
+    padding:16px 18px 10px; display:flex; align-items:center;
+    border-bottom:1px solid var(--line);
+  }
+  .sheet-head h2{ font-size:16px; margin:0; flex:1; font-weight:700; }
+  .sheet-head .close{
+    background:none;border:none; font-size:20px; color:var(--muted); cursor:pointer;
+  }
+  .sheet-body{ padding:16px 18px 6px; }
+
+  .field{ margin-bottom:16px; }
+  .field label{
+    display:block; font-size:12.5px; font-weight:600; color:var(--muted);
+    margin-bottom:6px; letter-spacing:.02em;
+  }
+  .field input[type=text], .field input[type=date], .field textarea{
+    width:100%; border:1px solid var(--line); border-radius:8px;
+    padding:10px 12px; font-size:15px; background:var(--paper-raised);
+    color:var(--ink); font-family:inherit;
+  }
+  .field textarea{ min-height:70px; resize:vertical; }
+  .field input:focus, .field textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  .segmented{
+    display:flex; gap:8px;
+  }
+  .segmented button{
+    flex:1; padding:10px 4px; border-radius:8px; border:1.5px solid var(--line);
+    background:var(--paper-raised); color:var(--ink); font-size:13px; font-weight:600;
+    cursor:pointer;
+  }
+  .segmented button.active.catalog{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .segmented button.active.meishi{ background:var(--amber); border-color:var(--amber); color:#fff; }
+  .segmented button.active.followup{ background:var(--rust); border-color:var(--rust); color:#fff; }
+
+  .photo-picker{
+    display:flex; align-items:center; gap:12px;
+  }
+  .photo-preview{
+    width:76px; height:76px; border-radius:10px; background:var(--paper-raised);
+    border:1px dashed var(--line); background-size:cover; background-position:center;
+    flex-shrink:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px;
+  }
+  .photo-btns{ display:flex; flex-direction:column; gap:8px; }
+  .btn-outline{
+    border:1.5px solid var(--accent); color:var(--accent); background:none;
+    padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn-outline.danger{ border-color:var(--danger); color:var(--danger); }
+
+  .sheet-actions{
+    display:flex; gap:10px; padding:18px 18px 6px;
+  }
+  .btn-primary{
+    flex:1; background:var(--accent); color:#fff; border:none; padding:13px;
+    border-radius:9px; font-size:15px; font-weight:700; cursor:pointer;
+  }
+  .btn-primary:active{ background:var(--accent-dark); }
+  .btn-secondary{
+    background:var(--paper-raised); color:var(--ink); border:1px solid var(--line);
+    padding:13px 18px; border-radius:9px; font-size:15px; font-weight:600; cursor:pointer;
+  }
+
+  .detail-photo{
+    width:100%; max-height:260px; object-fit:cover; border-radius:10px; margin-bottom:14px;
+    border:1px solid var(--line);
+  }
+  .detail-row{ margin-bottom:12px; }
+  .detail-row .k{ font-size:11.5px; color:var(--muted); font-weight:600; margin-bottom:2px; }
+  .detail-row .v{ font-size:15px; color:var(--ink); white-space:pre-wrap; }
+
+  /* ---------- document export (印刷 / PDF保存) ---------- */
+  .doc-page{ background:#fff; padding:4px 2px; }
+  .doc-title{ font-size:19px; font-weight:700; margin:0 0 4px; color:var(--ink); }
+  .doc-sub{ font-size:12px; color:var(--muted); margin-bottom:18px; }
+  .doc-entry{
+    border-bottom:1px solid var(--line); padding:14px 0;
+    break-inside:avoid; page-break-inside:avoid;
+  }
+  .doc-entry:first-of-type{ padding-top:0; }
+  .doc-company{ font-size:16px; font-weight:700; color:var(--ink); margin-bottom:2px; }
+  .doc-industry{ font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .doc-memo{ font-size:13.5px; color:var(--ink); white-space:pre-wrap; line-height:1.6; margin-bottom:10px; }
+  .doc-photo{ max-width:100%; max-height:340px; display:block; border-radius:8px; border:1px solid var(--line); }
+  @media print{
+    body *{ visibility:hidden; }
+    #docPrintArea, #docPrintArea *{ visibility:visible; }
+    #docPrintArea{ position:absolute; left:0; top:0; width:100%; }
+    .no-print{ display:none !important; }
+  }
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:var(--paper); padding:10px 18px; border-radius:20px;
+    font-size:13px; z-index:80; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  .toast.show{ opacity:1; }
+
+  .offline-note{
+    font-size:11.5px; color:var(--muted); text-align:center; padding:8px 20px 0;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="bar" id="header">
+    <h1 id="headerTitle">展示会見学リスト</h1>
+  </header>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// IndexedDB（この端末・このブラウザ内）に保存します。
+// localStorageより保存容量がはるかに大きく（数百MB〜）、ネットワーク接続も不要なため、
+// オフラインでも写真付きの記録をたくさん保存できます。
+const LS_PREFIX = 'exhibitionTracker:'; // 旧バージョン(localStorage)からの移行用
+const DB_NAME = 'exhibitionTrackerDB';
+const STORE_NAME = 'kv';
+
+let exhibitions = [];      // [{id, name, date}]
+let currentExhibitionId = null;
+let entriesCache = {};     // exhibitionId -> [entries]
+let editingEntry = null;   // entry being edited (or null = new)
+let pendingPhoto = null;   // dataURL staged for the open form
+
+const TYPES = [
+  { key:'catalog', label:'カタログ' },
+  { key:'meishi', label:'名刺交換' },
+  { key:'followup', label:'後日連絡' }
+];
+function typeLabel(k){ const t=TYPES.find(t=>t.key===k); return t?t.label:''; }
+// entry.types（配列）を正とし、旧バージョンのentry.type（文字列）にも対応
+function getEntryTypes(en){
+  if(!en) return [];
+  if(Array.isArray(en.types)) return en.types;
+  return en.type ? [en.type] : [];
+}
+function typeLabelsJoined(en){
+  return getEntryTypes(en).map(typeLabel).join('・');
+}
+
+function todayStr(){
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function fmtDate(s){
+  if(!s) return '';
+  const [y,m,d] = s.split('-');
+  return `${y}/${m}/${d}`;
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// 五十音順（かな・漢字・英数字も含めて自然な読み順）に並べ替えるための比較器
+// ふりがなが入力されていればそちらを優先して比較します
+const jaCollator = new Intl.Collator('ja', { sensitivity:'base', numeric:true });
+function exhibitionSortKey(ex){ return (ex.furigana && ex.furigana.trim()) ? ex.furigana.trim() : (ex.name||''); }
+function entrySortKey(en){ return (en.furigana && en.furigana.trim()) ? en.furigana.trim() : (en.company||''); }
+function sortExhibitionsByName(arr){
+  return [...arr].sort((a,b)=> jaCollator.compare(exhibitionSortKey(a), exhibitionSortKey(b)));
+}
+function sortEntriesByCompany(arr){
+  return [...arr].sort((a,b)=> jaCollator.compare(entrySortKey(a), entrySortKey(b)));
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1600);
+}
+
+/* ---------- storage helpers (IndexedDB: fully offline, large capacity) ---------- */
+let _dbPromise = null;
+function openDB(){
+  if(_dbPromise) return _dbPromise;
+  _dbPromise = new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = (e)=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE_NAME)){
+        db.createObjectStore(STORE_NAME, { keyPath: 'key' });
+      }
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+  return _dbPromise;
+}
+async function idbGet(key){
+  try{
+    const db = await openDB();
+    return await new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(key);
+      req.onsuccess = ()=> resolve(req.result ? req.result.value : null);
+      req.onerror = ()=> reject(req.error);
+    });
+  }catch(e){
+    return null;
+  }
+}
+async function idbSet(key, value){
+  try{
+    const db = await openDB();
+    return await new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put({ key, value });
+      tx.oncomplete = ()=> resolve(true);
+      tx.onerror = ()=> reject(tx.error);
+    });
+  }catch(e){
+    return false;
+  }
+}
+async function idbDelete(key){
+  try{
+    const db = await openDB();
+    return await new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(key);
+      tx.oncomplete = ()=> resolve(true);
+      tx.onerror = ()=> reject(tx.error);
+    });
+  }catch(e){
+    return false;
+  }
+}
+
+// 旧バージョン（localStorage）にデータが残っている場合、初回起動時に自動で移行します。
+async function migrateFromLocalStorageIfNeeded(){
+  try{
+    const already = await idbGet('exhibitions');
+    if(already) return; // すでにIndexedDBに移行済み
+    const oldRaw = localStorage.getItem(LS_PREFIX + 'exhibitions');
+    if(!oldRaw) return; // 移行対象なし
+    const oldExhibitions = JSON.parse(oldRaw);
+    await idbSet('exhibitions', oldExhibitions);
+    for(const ex of oldExhibitions){
+      const entRaw = localStorage.getItem(LS_PREFIX + 'entries:' + ex.id);
+      if(entRaw){
+        await idbSet('entries:' + ex.id, JSON.parse(entRaw));
+      }
+    }
+    for(let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(LS_PREFIX) === 0) localStorage.removeItem(k);
+    }
+    showToast('保存領域を拡張しました');
+  }catch(e){
+    // 移行に失敗しても既存データ（localStorage側）はそのまま残すので実害なし
+  }
+}
+
+async function loadExhibitions(){
+  exhibitions = (await idbGet('exhibitions')) || [];
+}
+async function saveExhibitions(){
+  const ok = await idbSet('exhibitions', exhibitions);
+  if(!ok) showToast('保存に失敗しました');
+}
+async function loadEntries(exId){
+  if(entriesCache[exId]) return entriesCache[exId];
+  const arr = (await idbGet('entries:'+exId)) || [];
+  entriesCache[exId] = arr;
+  return arr;
+}
+async function saveEntries(exId){
+  const ok = await idbSet('entries:'+exId, entriesCache[exId]||[]);
+  if(!ok) showToast('保存に失敗しました');
+}
+
+/* ---------- backup: export / import (JSON, includes photos) ---------- */
+async function exportBackupJSON(){
+  if(exhibitions.length === 0){ showToast('書き出すデータがありません'); return; }
+  const data = { app:'exhibitionTracker', version:1, exportedAt:new Date().toISOString(), exhibitions:[] };
+  for(const ex of exhibitions){
+    const entries = await loadEntries(ex.id);
+    data.exhibitions.push({ ...ex, entries });
+  }
+  const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `展示会見学リスト_バックアップ_${todayStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  showToast('バックアップを書き出しました');
+}
+async function handleBackupFile(e){
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async function(ev){
+    let data;
+    try{
+      data = JSON.parse(ev.target.result);
+      if(!data || !Array.isArray(data.exhibitions)) throw new Error('invalid');
+    }catch(err){
+      showToast('バックアップファイルを読み込めませんでした');
+      return;
+    }
+    if(!confirm(`このバックアップ（展示会 ${data.exhibitions.length}件）で現在のデータを置き換えます。よろしいですか？`)) return;
+    exhibitions = [];
+    entriesCache = {};
+    for(const ex of data.exhibitions){
+      const { entries, ...exMeta } = ex;
+      exhibitions.push(exMeta);
+      const arr = Array.isArray(entries) ? entries : [];
+      entriesCache[exMeta.id] = arr;
+      await idbSet('entries:'+exMeta.id, arr);
+    }
+    await saveExhibitions();
+    closeOverlay('menuOverlay');
+    renderHome();
+    showToast('復元しました');
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- menu sheet ---------- */
+function openMenuSheet(){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'menuOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>メニュー</h2>
+        <button class="close" onclick="closeOverlay('menuOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="exportAllCSV()">全件をCSVで書き出す</button>
+        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="exportBackupJSON()">バックアップを保存（写真も含む）</button>
+        <button class="btn-outline" style="width:100%;" onclick="document.getElementById('backupInput').click()">バックアップから復元する</button>
+        <input type="file" id="backupInput" accept="application/json,.json" style="display:none" onchange="handleBackupFile(event)">
+        <p style="font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6;">
+          バックアップには写真を含む全データが1つのファイル(JSON)として保存されます。機種変更やブラウザのデータ消去に備えて、ファイルアプリやクラウドストレージに保管しておくことをおすすめします。
+        </p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+
+/* ---------- CSV export ---------- */
+function csvField(v){
+  const s = (v===undefined || v===null) ? '' : String(v);
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+function buildCSV(header, rows){
+  const lines = [header.map(csvField).join(',')];
+  for(const r of rows) lines.push(r.map(csvField).join(','));
+  return lines.join('\r\n');
+}
+function sanitizeFilename(name){
+  return (name||'').replace(/[\\/:*?"<>|]/g, '_').trim() || 'export';
+}
+function downloadCSV(filename, content){
+  const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- Word(.docx)ファイルの生成（ライブラリ不使用・完全オフライン） ---------- */
+/* .docxはZIP形式のパッケージなので、ZIPを自前で組み立ててWord/Googleドキュメントで開けるファイルを作る */
+const _CRC_TABLE = (() => {
+  const table = [];
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+function _crc32(bytes){
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = _CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function _u16(n){ return new Uint8Array([n&0xFF,(n>>8)&0xFF]); }
+function _u32(n){ return new Uint8Array([n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>24)&0xFF]); }
+function _concatBytes(chunks){
+  const total = chunks.reduce((s,c)=>s+c.length,0);
+  const out = new Uint8Array(total);
+  let offset=0;
+  for(const c of chunks){ out.set(c, offset); offset+=c.length; }
+  return out;
+}
+function _strToBytes(s){ return new TextEncoder().encode(s); }
+function _dataUrlToBytes(dataUrl){
+  const base64 = dataUrl.split(',')[1] || '';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+function _getImageDimensions(dataUrl){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=> resolve({ w: img.naturalWidth||800, h: img.naturalHeight||600 });
+    img.onerror = ()=> resolve({ w:800, h:600 });
+    img.src = dataUrl;
+  });
+}
+// ZIP（無圧縮 store 方式）を組み立ててBlobを返す
+function _buildZipBlob(files, mimeType){
+  const localChunks = [];
+  const centralChunks = [];
+  let offset = 0;
+  for(const f of files){
+    const nameBytes = _strToBytes(f.name);
+    const data = f.data;
+    const crc = _crc32(data);
+    const size = data.length;
+    const localHeader = _concatBytes([
+      _u32(0x04034b50), _u16(20), _u16(0), _u16(0), _u16(0), _u16(0),
+      _u32(crc), _u32(size), _u32(size), _u16(nameBytes.length), _u16(0)
+    ]);
+    localChunks.push(localHeader, nameBytes, data);
+    const localHeaderOffset = offset;
+    offset += localHeader.length + nameBytes.length + data.length;
+    const centralHeader = _concatBytes([
+      _u32(0x02014b50), _u16(20), _u16(20), _u16(0), _u16(0), _u16(0), _u16(0),
+      _u32(crc), _u32(size), _u32(size), _u16(nameBytes.length), _u16(0), _u16(0), _u16(0), _u16(0), _u32(0),
+      _u32(localHeaderOffset)
+    ]);
+    centralChunks.push(centralHeader, nameBytes);
+  }
+  const centralDirectory = _concatBytes(centralChunks);
+  const centralDirOffset = offset;
+  const eocd = _concatBytes([
+    _u32(0x06054b50), _u16(0), _u16(0),
+    _u16(files.length), _u16(files.length),
+    _u32(centralDirectory.length), _u32(centralDirOffset), _u16(0)
+  ]);
+  const finalBytes = _concatBytes([...localChunks, centralDirectory, eocd]);
+  return new Blob([finalBytes], { type: mimeType });
+}
+async function generateWordDoc(exId){
+  const ex = exhibitions.find(e=>e.id===exId);
+  if(!ex) return;
+  const entries = sortEntriesByCompany(await loadEntries(exId));
+  if(entries.length === 0){ showToast('書き出す記録がありません'); return; }
+  showToast('Wordファイルを作成中…');
+
+  const mediaFiles = [];
+  const relEntries = [];
+  let bodyXml = '';
+
+  bodyXml += `<w:p><w:r><w:t xml:space="preserve">${esc(ex.name)}</w:t></w:r></w:p>`;
+  const subText = [ex.date ? fmtDate(ex.date) : '', entries.length + '件'].filter(Boolean).join('　・　');
+  bodyXml += `<w:p><w:r><w:t xml:space="preserve">${esc(subText)}</w:t></w:r></w:p>`;
+  bodyXml += `<w:p/>`;
+
+  let imgIndex = 0;
+  for(const en of entries){
+    bodyXml += `<w:p><w:r><w:t xml:space="preserve">${esc(en.company || '（社名未入力）')}</w:t></w:r></w:p>`;
+    if(en.industry){
+      bodyXml += `<w:p><w:r><w:t xml:space="preserve">${esc(en.industry)}</w:t></w:r></w:p>`;
+    }
+    if(en.memo){
+      const lines = en.memo.split('\n');
+      const runs = lines.map((line,i)=> (i===0?'':'<w:br/>') + `<w:t xml:space="preserve">${esc(line)}</w:t>`).join('');
+      bodyXml += `<w:p><w:r>${runs}</w:r></w:p>`;
+    }
+    if(en.photo){
+      imgIndex++;
+      const dims = await _getImageDimensions(en.photo);
+      const cx = 3600000; // 幅 約3.94インチ
+      const cy = Math.max(1, Math.round(cx * (dims.h / dims.w)));
+      const mediaName = `image${imgIndex}.jpeg`;
+      mediaFiles.push({ name:`word/media/${mediaName}`, data:_dataUrlToBytes(en.photo) });
+      const rId = `rId${imgIndex}`;
+      relEntries.push({ id:rId, target:`media/${mediaName}` });
+      bodyXml += `<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${imgIndex}" name="Picture ${imgIndex}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${imgIndex}" name="Picture ${imgIndex}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+    }
+    bodyXml += `<w:p/>`; // 出展社ごとの区切りは空行のみ
+  }
+  bodyXml += `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417"/></w:sectPr>`;
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${bodyXml}</w:body></w:document>`;
+
+  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relEntries.map(r=>`<Relationship Id="${r.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${r.target}"/>`).join('')}</Relationships>`;
+
+  const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`;
+
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`;
+
+  const coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${esc(ex.name)}</dc:title><dc:creator>展示会見学リスト</dc:creator></cp:coreProperties>`;
+
+  const files = [
+    { name:'[Content_Types].xml', data:_strToBytes(contentTypesXml) },
+    { name:'_rels/.rels', data:_strToBytes(rootRelsXml) },
+    { name:'docProps/core.xml', data:_strToBytes(coreXml) },
+    { name:'word/document.xml', data:_strToBytes(documentXml) },
+    { name:'word/_rels/document.xml.rels', data:_strToBytes(relsXml) },
+    ...mediaFiles
+  ];
+
+  const blob = _buildZipBlob(files, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${sanitizeFilename(ex.name)}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  showToast('Wordファイルを作成しました');
+}
+
+const CSV_HEADER = ['展示会名','日付','出展社名','ふりがな','業種','担当者名','種別','メモ','写真の有無'];
+async function exportExhibitionCSV(exId){
+  const ex = exhibitions.find(e=>e.id===exId);
+  if(!ex) return;
+  const entries = sortEntriesByCompany(await loadEntries(exId));
+  if(entries.length === 0){ showToast('書き出す記録がありません'); return; }
+  const rows = entries.map(en => [ex.name, en.date, en.company, en.furigana||'', en.industry, en.contact, typeLabelsJoined(en), en.memo, en.photo ? '有' : '無']);
+  downloadCSV(`${sanitizeFilename(ex.name)}.csv`, buildCSV(CSV_HEADER, rows));
+  showToast('CSVを書き出しました');
+}
+async function exportAllCSV(){
+  if(exhibitions.length === 0){ showToast('書き出すデータがありません'); return; }
+  const sorted = sortExhibitionsByName(exhibitions);
+  let rows = [];
+  for(const ex of sorted){
+    const entries = sortEntriesByCompany(await loadEntries(ex.id));
+    for(const en of entries){
+      rows.push([ex.name, en.date, en.company, en.furigana||'', en.industry, en.contact, typeLabelsJoined(en), en.memo, en.photo ? '有' : '無']);
+    }
+  }
+  if(rows.length === 0){ showToast('書き出す記録がありません'); return; }
+  downloadCSV(`展示会見学リスト_全件_${todayStr()}.csv`, buildCSV(CSV_HEADER, rows));
+  showToast('CSVを書き出しました');
+}
+
+/* ---------- 展示会ごとの書き出しメニュー ---------- */
+function openExportSheet(exId){
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'exportSheetOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>書き出し</h2>
+        <button class="close" onclick="closeOverlay('exportSheetOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="closeOverlay('exportSheetOverlay'); exportExhibitionCSV('${exId}')">CSVで書き出す</button>
+        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="closeOverlay('exportSheetOverlay'); generateWordDoc('${exId}')">Wordファイル(.docx)で書き出す</button>
+        <button class="btn-outline" style="width:100%;" onclick="closeOverlay('exportSheetOverlay'); openDocumentPreview('${exId}')">プレビューして印刷 / PDF保存</button>
+        <p style="font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6;">
+          Wordファイルは出展社名・業種・メモ・写真をまとめた.docxとして保存されます。Microsoft WordやGoogleドキュメント(アップロード後に「Googleドキュメントで開く」)でそのまま開けます。
+        </p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+/* ---------- ドキュメント（印刷 / PDF保存）プレビュー ---------- */
+async function openDocumentPreview(exId){
+  const ex = exhibitions.find(e=>e.id===exId);
+  if(!ex) return;
+  const entries = sortEntriesByCompany(await loadEntries(exId));
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'docOverlay';
+  const bodyHtml = entries.length === 0
+    ? `<p style="color:var(--muted);font-size:13px;">記録がありません。</p>`
+    : entries.map(en => `
+      <div class="doc-entry">
+        <div class="doc-company">${esc(en.company) || '（社名未入力）'}</div>
+        ${en.industry ? `<div class="doc-industry">${esc(en.industry)}</div>` : ''}
+        ${en.memo ? `<div class="doc-memo">${esc(en.memo)}</div>` : ''}
+        ${en.photo ? `<img class="doc-photo" src="${en.photo}">` : ''}
+      </div>
+    `).join('');
+  overlay.innerHTML = `
+    <div class="sheet" style="max-height:96vh;">
+      <div class="sheet-head no-print">
+        <h2>ドキュメントプレビュー</h2>
+        <button class="close" onclick="closeOverlay('docOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div id="docPrintArea" class="doc-page">
+          <div class="doc-title">${esc(ex.name)}</div>
+          <div class="doc-sub">${ex.date ? fmtDate(ex.date) : ''}${entries.length ? ' ・ ' + entries.length + '件' : ''}</div>
+          ${bodyHtml}
+        </div>
+      </div>
+      <div class="sheet-actions no-print">
+        <button class="btn-secondary" onclick="closeOverlay('docOverlay')">閉じる</button>
+        <button class="btn-primary" onclick="window.print()">印刷 / PDFで保存</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+/* ---------- rendering: home ---------- */
+async function renderHome(){
+  currentExhibitionId = null;
+  document.getElementById('headerTitle').textContent = '展示会見学リスト';
+  const header = document.getElementById('header');
+  header.innerHTML = `<h1 id="headerTitle">展示会見学リスト</h1>
+    <div class="head-actions">
+      <button class="head-action" onclick="openMenuSheet()">⋯ メニュー</button>
+      <button class="head-action" onclick="openExhibitionForm()">＋ 展示会</button>
+    </div>`;
+
+  const main = document.getElementById('main');
+  main.innerHTML = `<div id="folderList"></div>`;
+  const list = document.getElementById('folderList');
+
+  if(exhibitions.length === 0){
+    list.innerHTML = `<div class="empty">
+      <div class="glyph">🗂️</div>
+      <p>まだ展示会が登録されていません。</p>
+      <p>右上の「＋ 展示会」から追加してください。</p>
+    </div>`;
+    return;
+  }
+
+  // 五十音順（展示会名）
+  const sorted = sortExhibitionsByName(exhibitions);
+  let html = '';
+  for(const ex of sorted){
+    const count = (await loadEntries(ex.id)).length;
+    html += `<div class="folder-card" onclick="openExhibition('${ex.id}')">
+      <div class="fi">
+        <div class="fname">${esc(ex.name)}</div>
+        <div class="fmeta">${ex.date ? fmtDate(ex.date) : '日付未設定'}</div>
+      </div>
+      <div class="count">${count}件</div>
+      <button class="del" onclick="event.stopPropagation(); openExhibitionForm('${ex.id}')" title="編集" style="font-size:15px;">✎</button>
+      <button class="del" onclick="event.stopPropagation(); deleteExhibition('${ex.id}')">✕</button>
+    </div>`;
+  }
+  list.innerHTML = html;
+}
+
+/* ---------- rendering: exhibition detail ---------- */
+async function openExhibition(id){
+  currentExhibitionId = id;
+  const ex = exhibitions.find(e=>e.id===id);
+  const header = document.getElementById('header');
+  header.innerHTML = `
+    <button class="back" onclick="renderHome()">←</button>
+    <h1 id="headerTitle">${esc(ex.name)}</h1>
+    <button class="head-action" onclick="openExportSheet('${id}')">書き出し</button>
+  `;
+  const entries = await loadEntries(id);
+  const main = document.getElementById('main');
+
+  if(entries.length === 0){
+    main.innerHTML = `<div class="empty">
+      <div class="glyph">📇</div>
+      <p>まだ記録がありません。</p>
+      <p>右下の＋ボタンから出展社の記録を追加できます。</p>
+    </div>
+    <button class="fab" onclick="openEntryForm()">＋</button>`;
+    return;
+  }
+
+  // 五十音順（出展社名）
+  const sorted = sortEntriesByCompany(entries);
+  let html = '<div>';
+  for(const en of sorted){
+    const types = getEntryTypes(en);
+    html += `<div class="entry-card" onclick="openEntryDetail('${en.id}')">
+      <div class="entry-thumb" style="${en.photo ? `background-image:url('${en.photo}')` : ''}">${en.photo ? '' : '写真\nなし'}</div>
+      <div class="entry-info">
+        <div class="entry-top">
+          <div class="entry-company">${esc(en.company) || '（社名未入力）'}</div>
+        </div>
+        ${types.length ? `<div class="entry-tags">${types.map(t=>`<span class="tag ${t}">${typeLabel(t)}</span>`).join('')}</div>` : ''}
+        <div class="entry-meta">${esc(en.industry||'')}${en.industry && en.contact ? ' ・ ' : ''}${esc(en.contact||'')} ・ ${fmtDate(en.date)}</div>
+        ${en.memo ? `<div class="entry-memo">${esc(en.memo)}</div>` : ''}
+      </div>
+    </div>`;
+  }
+  html += '</div>';
+  main.innerHTML = html;
+
+  const fab = document.createElement('button');
+  fab.className = 'fab';
+  fab.textContent = '＋';
+  fab.onclick = () => openEntryForm();
+  main.appendChild(fab);
+}
+
+/* ---------- exhibition add / delete ---------- */
+function openExhibitionForm(editId){
+  const ex = editId ? exhibitions.find(e=>e.id===editId) : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'exOverlay';
+  overlay.dataset.editId = editId || '';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>${ex ? '展示会を編集' : '展示会を追加'}</h2>
+        <button class="close" onclick="closeOverlay('exOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>展示会名</label>
+          <input type="text" id="exName" value="${ex ? esc(ex.name) : ''}" placeholder="例）第◯回 ○○展示会">
+        </div>
+        <div class="field">
+          <label>ふりがな（五十音順で正しく並べたい場合に入力）</label>
+          <input type="text" id="exFurigana" value="${ex ? esc(ex.furigana||'') : ''}" placeholder="例）だい◯かい　まるまるてんじかい">
+        </div>
+        <div class="field">
+          <label>見学日</label>
+          <input type="date" id="exDate" value="${ex ? ex.date : todayStr()}">
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-secondary" onclick="closeOverlay('exOverlay')">キャンセル</button>
+        <button class="btn-primary" onclick="saveExhibitionForm()">${ex ? '保存する' : '追加する'}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  setTimeout(()=>document.getElementById('exName').focus(), 50);
+}
+async function saveExhibitionForm(){
+  const overlay = document.getElementById('exOverlay');
+  const editId = overlay.dataset.editId;
+  const name = document.getElementById('exName').value.trim();
+  const furigana = document.getElementById('exFurigana').value.trim();
+  const date = document.getElementById('exDate').value || todayStr();
+  if(!name){ showToast('展示会名を入力してください'); return; }
+  if(editId){
+    const idx = exhibitions.findIndex(e=>e.id===editId);
+    if(idx > -1){
+      exhibitions[idx] = { ...exhibitions[idx], name, furigana, date };
+    }
+  }else{
+    exhibitions.push({ id: uid(), name, furigana, date, createdAt: Date.now() });
+  }
+  await saveExhibitions();
+  closeOverlay('exOverlay');
+  renderHome();
+}
+async function deleteExhibition(id){
+  const ex = exhibitions.find(e=>e.id===id);
+  if(!confirm(`「${ex.name}」を削除しますか？\n登録した記録もすべて削除されます。`)) return;
+  exhibitions = exhibitions.filter(e=>e.id!==id);
+  await saveExhibitions();
+  await idbDelete('entries:'+id);
+  delete entriesCache[id];
+  renderHome();
+}
+
+/* ---------- entry add / edit ---------- */
+function openEntryForm(entry){
+  editingEntry = entry || null;
+  pendingPhoto = entry ? entry.photo : null;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'entryOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>${entry ? '記録を編集' : '記録を追加'}</h2>
+        <button class="close" onclick="closeOverlay('entryOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>種別（1つ・複数・選択なし、いずれも可。選択中のボタンをもう一度押すと解除）</label>
+          <div class="segmented" id="typeSeg">
+            ${TYPES.map(t=>`<button type="button" class="${t.key} ${getEntryTypes(entry).includes(t.key) ? 'active':''}" onclick="selectType('${t.key}')">${t.label}</button>`).join('')}
+          </div>
+        </div>
+        <div class="field">
+          <label>出展社名</label>
+          <input type="text" id="fCompany" value="${entry ? esc(entry.company) : ''}" placeholder="株式会社◯◯">
+        </div>
+        <div class="field">
+          <label>ふりがな（五十音順で正しく並べたい場合に入力）</label>
+          <input type="text" id="fFurigana" value="${entry ? esc(entry.furigana||'') : ''}" placeholder="例）かぶしきがいしゃ　まるまる">
+        </div>
+        <div class="field">
+          <label>業種</label>
+          <input type="text" id="fIndustry" value="${entry ? esc(entry.industry) : ''}" placeholder="例）製造業、IT、食品 など">
+        </div>
+        <div class="field">
+          <label>担当者名</label>
+          <input type="text" id="fContact" value="${entry ? esc(entry.contact) : ''}" placeholder="山田 太郎 様">
+        </div>
+        <div class="field">
+          <label>メモ</label>
+          <textarea id="fMemo" placeholder="商談内容、印象、フォローアップ事項など">${entry ? esc(entry.memo) : ''}</textarea>
+        </div>
+        <div class="field">
+          <label>日付</label>
+          <input type="date" id="fDate" value="${entry ? entry.date : todayStr()}">
+        </div>
+        <div class="field">
+          <label>写真</label>
+          <div class="photo-picker">
+            <div class="photo-preview" id="photoPreview" style="${pendingPhoto ? `background-image:url('${pendingPhoto}')` : ''}">${pendingPhoto ? '' : 'なし'}</div>
+            <div class="photo-btns">
+              <button type="button" class="btn-outline" onclick="document.getElementById('photoInput').click()">ギャラリーから選ぶ</button>
+              ${pendingPhoto ? `<button type="button" class="btn-outline danger" onclick="clearPhoto()">写真を削除</button>` : ''}
+            </div>
+            <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="handlePhotoSelect(event)">
+          </div>
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-secondary" onclick="closeOverlay('entryOverlay')">キャンセル</button>
+        <button class="btn-primary" onclick="saveEntryForm()">保存する</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.dataset.selectedTypes = getEntryTypes(entry).join(',');
+}
+function selectType(key){
+  const overlay = document.getElementById('entryOverlay');
+  const current = overlay.dataset.selectedTypes ? overlay.dataset.selectedTypes.split(',').filter(Boolean) : [];
+  const idx = current.indexOf(key);
+  if(idx > -1){
+    current.splice(idx, 1); // 選択中のものをもう一度押すと解除
+  }else{
+    current.push(key); // 複数選択可
+  }
+  overlay.dataset.selectedTypes = current.join(',');
+  const seg = document.getElementById('typeSeg');
+  [...seg.children].forEach(btn=>{
+    const btnKey = TYPES.find(t=>t.label === btn.textContent)?.key;
+    btn.classList.toggle('active', current.includes(btnKey));
+  });
+}
+function clearPhoto(){
+  pendingPhoto = null;
+  const overlay = document.getElementById('entryOverlay');
+  // re-render form fully to refresh photo controls, keep entered values
+  const company = document.getElementById('fCompany').value;
+  const furigana = document.getElementById('fFurigana').value;
+  const industry = document.getElementById('fIndustry').value;
+  const contact = document.getElementById('fContact').value;
+  const memo = document.getElementById('fMemo').value;
+  const date = document.getElementById('fDate').value;
+  const types = overlay.dataset.selectedTypes ? overlay.dataset.selectedTypes.split(',').filter(Boolean) : [];
+  closeOverlay('entryOverlay');
+  openEntryForm(editingEntry ? {...editingEntry, company, furigana, industry, contact, memo, date, types, photo:null} : {company, furigana, industry, contact, memo, date, types, photo:null, __isDraft:true});
+}
+function handlePhotoSelect(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    const img = new Image();
+    img.onload = function(){
+      const maxW = 900;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+      pendingPhoto = dataUrl;
+      const preview = document.getElementById('photoPreview');
+      if(preview){
+        preview.style.backgroundImage = `url('${dataUrl}')`;
+        preview.textContent = '';
+      }
+      // add delete button if not present
+      const overlay = document.getElementById('entryOverlay');
+      if(overlay && !overlay.querySelector('.photo-btns .danger')){
+        const btnGroup = overlay.querySelector('.photo-btns');
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-outline danger';
+        delBtn.textContent = '写真を削除';
+        delBtn.onclick = clearPhoto;
+        btnGroup.appendChild(delBtn);
+      }
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function saveEntryForm(){
+  const overlay = document.getElementById('entryOverlay');
+  const company = document.getElementById('fCompany').value.trim();
+  const furigana = document.getElementById('fFurigana').value.trim();
+  const industry = document.getElementById('fIndustry').value.trim();
+  const contact = document.getElementById('fContact').value.trim();
+  const memo = document.getElementById('fMemo').value.trim();
+  const date = document.getElementById('fDate').value || todayStr();
+  const types = overlay.dataset.selectedTypes ? overlay.dataset.selectedTypes.split(',').filter(Boolean) : [];
+
+  if(!company){ showToast('出展社名を入力してください'); return; }
+
+  const entries = await loadEntries(currentExhibitionId);
+  if(editingEntry && editingEntry.id){
+    const idx = entries.findIndex(e=>e.id===editingEntry.id);
+    if(idx > -1){
+      entries[idx] = {...entries[idx], company, furigana, industry, contact, memo, date, types, type: undefined, photo: pendingPhoto};
+    }
+  }else{
+    entries.push({
+      id: uid(), company, furigana, industry, contact, memo, date, types,
+      photo: pendingPhoto, createdAt: Date.now()
+    });
+  }
+  entriesCache[currentExhibitionId] = entries;
+  await saveEntries(currentExhibitionId);
+  closeOverlay('entryOverlay');
+  editingEntry = null;
+  pendingPhoto = null;
+  openExhibition(currentExhibitionId);
+  showToast('保存しました');
+}
+
+/* ---------- entry detail ---------- */
+async function openEntryDetail(entryId){
+  const entries = await loadEntries(currentExhibitionId);
+  const en = entries.find(e=>e.id===entryId);
+  if(!en) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'detailOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>${esc(en.company)}</h2>
+        <button class="close" onclick="closeOverlay('detailOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        ${en.photo ? `<img class="detail-photo" src="${en.photo}">` : ''}
+        <div class="detail-row"><div class="k">種別</div><div class="v">${getEntryTypes(en).length ? getEntryTypes(en).map(t=>`<span class="tag ${t}" style="margin-right:6px;">${typeLabel(t)}</span>`).join('') : '－'}</div></div>
+        ${en.furigana ? `<div class="detail-row"><div class="k">ふりがな</div><div class="v">${esc(en.furigana)}</div></div>` : ''}
+        <div class="detail-row"><div class="k">業種</div><div class="v">${esc(en.industry) || '－'}</div></div>
+        <div class="detail-row"><div class="k">担当者名</div><div class="v">${esc(en.contact) || '－'}</div></div>
+        <div class="detail-row"><div class="k">メモ</div><div class="v">${esc(en.memo) || '－'}</div></div>
+        <div class="detail-row"><div class="k">日付</div><div class="v">${fmtDate(en.date)}</div></div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-secondary" onclick="deleteEntry('${en.id}')">削除</button>
+        <button class="btn-primary" onclick="editEntryFromDetail('${en.id}')">編集する</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+async function editEntryFromDetail(entryId){
+  const entries = await loadEntries(currentExhibitionId);
+  const en = entries.find(e=>e.id===entryId);
+  closeOverlay('detailOverlay');
+  openEntryForm(en);
+}
+async function deleteEntry(entryId){
+  if(!confirm('この記録を削除しますか？')) return;
+  let entries = await loadEntries(currentExhibitionId);
+  entries = entries.filter(e=>e.id!==entryId);
+  entriesCache[currentExhibitionId] = entries;
+  await saveEntries(currentExhibitionId);
+  closeOverlay('detailOverlay');
+  openExhibition(currentExhibitionId);
+  showToast('削除しました');
+}
+
+/* ---------- overlay helper ---------- */
+function closeOverlay(id){
+  const el = document.getElementById(id);
+  if(el) el.remove();
+  editingEntry = null;
+  pendingPhoto = null;
+}
+
+/* ---------- PWA: service worker registration (オフライン対応) ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{ /* 登録できなくてもアプリ自体は動作する */ });
+  });
+}
+
+/* ---------- init ---------- */
+(async function init(){
+  document.getElementById('main').innerHTML = `<div class="empty"><p>読み込み中…</p></div>`;
+  await migrateFromLocalStorageIfNeeded();
+  await loadExhibitions();
+  await renderHome();
+})();
+</script>
+</body>
+</html>
