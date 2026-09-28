@@ -1,7 +1,7 @@
 // 展示会見学リスト - オフライン用サービスワーカー
 // 初回アクセス時に必要なファイルをすべてキャッシュし、以降はネット接続なしで動作します。
 
-const CACHE_NAME = 'tenji-tracker-v5';
+const CACHE_NAME = 'tenji-tracker-v6';
 const ASSETS = [
   './',
   './index.html',

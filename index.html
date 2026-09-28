@@ -472,24 +472,40 @@ async function saveEntries(exId){
 }
 
 /* ---------- backup: export / import (JSON, includes photos) ---------- */
-async function exportBackupJSON(){
-  if(exhibitions.length === 0){ showToast('書き出すデータがありません'); return; }
-  const data = { app:'exhibitionTracker', version:1, exportedAt:new Date().toISOString(), exhibitions:[] };
-  for(const ex of exhibitions){
-    const entries = await loadEntries(ex.id);
-    data.exhibitions.push({ ...ex, entries });
-  }
+function _downloadJSON(filename, data){
   const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `展示会見学リスト_バックアップ_${todayStr()}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+// exId を渡すとその展示会だけ、省略すると全展示会のバックアップを書き出す
+async function exportBackupJSON(exId){
+  if(exId){
+    const ex = exhibitions.find(e=>e.id===exId);
+    if(!ex){ showToast('展示会が見つかりません'); return; }
+    const entries = await loadEntries(ex.id);
+    const data = { app:'exhibitionTracker', version:1, scope:'exhibition', exportedAt:new Date().toISOString(),
+                   exhibitions:[{ ...ex, entries }] };
+    _downloadJSON(`${sanitizeFilename(ex.name)}_バックアップ_${todayStr()}.json`, data);
+    showToast('この展示会のバックアップを書き出しました');
+    return;
+  }
+  if(exhibitions.length === 0){ showToast('書き出すデータがありません'); return; }
+  const data = { app:'exhibitionTracker', version:1, scope:'all', exportedAt:new Date().toISOString(), exhibitions:[] };
+  for(const ex of exhibitions){
+    const entries = await loadEntries(ex.id);
+    data.exhibitions.push({ ...ex, entries });
+  }
+  _downloadJSON(`展示会見学リスト_バックアップ_${todayStr()}.json`, data);
   showToast('バックアップを書き出しました');
 }
+// 復元: 展示会ごとのバックアップ(scope:'exhibition')はその展示会だけを置き換え(なければ追加)、
+// 全体バックアップ(scope:'all' または旧形式)は全データを置き換える
 async function handleBackupFile(e){
   const file = e.target.files[0];
   e.target.value = '';
@@ -504,7 +520,33 @@ async function handleBackupFile(e){
       showToast('バックアップファイルを読み込めませんでした');
       return;
     }
-    if(!confirm(`このバックアップ（展示会 ${data.exhibitions.length}件）で現在のデータを置き換えます。よろしいですか？`)) return;
+
+    if(data.scope === 'exhibition'){
+      // ---- 展示会単位の復元 ----
+      const incoming = data.exhibitions[0];
+      if(!incoming || !incoming.id){ showToast('バックアップファイルを読み込めませんでした'); return; }
+      const exists = exhibitions.some(x=>x.id===incoming.id);
+      const msg = exists
+        ? `展示会「${incoming.name}」のバックアップです。\n今ある同じ展示会の記録をこの内容に置き換えます。他の展示会は変更されません。よろしいですか？`
+        : `展示会「${incoming.name}」のバックアップです。\n新しい展示会として追加します。他の展示会は変更されません。よろしいですか？`;
+      if(!confirm(msg)) return;
+      const { entries, ...exMeta } = incoming;
+      const arr = Array.isArray(entries) ? entries : [];
+      const idx = exhibitions.findIndex(x=>x.id===exMeta.id);
+      if(idx > -1) exhibitions[idx] = exMeta; else exhibitions.push(exMeta);
+      entriesCache[exMeta.id] = arr;
+      await idbSet('entries:'+exMeta.id, arr);
+      await saveExhibitions();
+      closeOverlay('menuOverlay');
+      closeOverlay('exportSheetOverlay');
+      if(currentExhibitionId === exMeta.id) openExhibition(exMeta.id); else renderHome();
+      showToast('この展示会を復元しました');
+      return;
+    }
+
+    // ---- 全体の復元(従来どおり全データを置き換え) ----
+    if(!confirm(`このバックアップ（展示会 ${data.exhibitions.length}件）で現在のデータをすべて置き換えます。よろしいですか？`)) return;
+    const oldIds = exhibitions.map(x=>x.id);
     exhibitions = [];
     entriesCache = {};
     for(const ex of data.exhibitions){
@@ -514,8 +556,13 @@ async function handleBackupFile(e){
       entriesCache[exMeta.id] = arr;
       await idbSet('entries:'+exMeta.id, arr);
     }
+    // バックアップに含まれない旧データの記録領域を片付ける
+    for(const id of oldIds){
+      if(!exhibitions.some(x=>x.id===id)) await idbDelete('entries:'+id);
+    }
     await saveExhibitions();
     closeOverlay('menuOverlay');
+    closeOverlay('exportSheetOverlay');
     renderHome();
     showToast('復元しました');
   };
@@ -535,11 +582,11 @@ function openMenuSheet(){
       </div>
       <div class="sheet-body">
         <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="exportAllCSV()">全件をCSVで書き出す</button>
-        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="exportBackupJSON()">バックアップを保存（写真も含む）</button>
-        <button class="btn-outline" style="width:100%;" onclick="document.getElementById('backupInput').click()">バックアップから復元する</button>
+        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="exportBackupJSON()">全体のバックアップを保存（写真も含む）</button>
+        <button class="btn-outline" style="width:100%;" onclick="document.getElementById('backupInput').click()">バックアップから復元する（全体／展示会ごと）</button>
         <input type="file" id="backupInput" accept="application/json,.json" style="display:none" onchange="handleBackupFile(event)">
         <p style="font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6;">
-          バックアップには写真を含む全データが1つのファイル(JSON)として保存されます。機種変更やブラウザのデータ消去に備えて、ファイルアプリやクラウドストレージに保管しておくことをおすすめします。
+          ここで保存するのは全展示会分のバックアップです（1つの展示会だけのバックアップは、各展示会画面の「書き出し」から取れます）。展示会ごとのバックアップファイルもここから復元できます。機種変更やブラウザのデータ消去に備えて、ファイルアプリやクラウドストレージに保管しておくことをおすすめします。
         </p>
       </div>
     </div>
@@ -754,16 +801,25 @@ function openExportSheet(exId){
   overlay.innerHTML = `
     <div class="sheet">
       <div class="sheet-head">
-        <h2>書き出し</h2>
+        <h2>書き出し・バックアップ</h2>
         <button class="close" onclick="closeOverlay('exportSheetOverlay')">✕</button>
       </div>
       <div class="sheet-body">
         <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="closeOverlay('exportSheetOverlay'); exportExhibitionCSV('${exId}')">CSVで書き出す</button>
         <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="closeOverlay('exportSheetOverlay'); generateWordDoc('${exId}')">Wordファイル(.docx)で書き出す</button>
-        <button class="btn-outline" style="width:100%;" onclick="closeOverlay('exportSheetOverlay'); openDocumentPreview('${exId}')">プレビューして印刷 / PDF保存</button>
-        <p style="font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6;">
+        <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="closeOverlay('exportSheetOverlay'); openDocumentPreview('${exId}')">プレビューして印刷 / PDF保存</button>
+        <p style="font-size:12px;color:var(--muted);margin:4px 0 18px;line-height:1.6;">
           Wordファイルは出展社名・業種・メモ・写真をまとめた.docxとして保存されます。Microsoft WordやGoogleドキュメント(アップロード後に「Googleドキュメントで開く」)でそのまま開けます。
         </p>
+        <div style="border-top:1px solid var(--line);padding-top:16px;">
+          <p style="font-size:12.5px;font-weight:600;color:var(--muted);margin:0 0 10px;">この展示会のバックアップ</p>
+          <button class="btn-outline" style="width:100%;margin-bottom:10px;" onclick="exportBackupJSON('${exId}')">この展示会のバックアップを保存（写真も含む）</button>
+          <button class="btn-outline" style="width:100%;" onclick="document.getElementById('backupInputEx').click()">バックアップから復元する</button>
+          <input type="file" id="backupInputEx" accept="application/json,.json" style="display:none" onchange="handleBackupFile(event)">
+          <p style="font-size:12px;color:var(--muted);margin-top:12px;line-height:1.6;">
+            展示会ごとのバックアップファイルを選ぶと、その展示会だけが置き換わります（まだ無い展示会は追加されます）。他の展示会には影響しません。
+          </p>
+        </div>
       </div>
     </div>
   `;
