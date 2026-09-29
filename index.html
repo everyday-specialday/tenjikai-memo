@@ -140,6 +140,7 @@
     border:1px solid var(--line);
     display:flex; align-items:center; justify-content:center;
     color:var(--muted); font-size:11px;
+    position:relative;
   }
   .entry-info{ flex:1; min-width:0; }
   .entry-top{ display:flex; align-items:center; gap:8px; }
@@ -235,6 +236,12 @@
   .photo-picker{
     display:flex; align-items:center; gap:12px;
   }
+  .card-preview-wrap{
+    width:100%; aspect-ratio:1.6/1; border-radius:10px; border:1px dashed var(--line);
+    background:var(--paper-raised); display:flex; align-items:center; justify-content:center;
+    overflow:hidden; color:var(--muted); font-size:13px; text-align:center; padding:8px;
+  }
+  .card-preview-wrap img{ width:100%; height:100%; object-fit:contain; display:block; }
   .photo-preview{
     width:76px; height:76px; border-radius:10px; background:var(--paper-raised);
     border:1px dashed var(--line); background-size:cover; background-position:center;
@@ -246,6 +253,28 @@
     padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
   }
   .btn-outline.danger{ border-color:var(--danger); color:var(--danger); }
+
+  .photo-gallery{ display:flex; flex-wrap:wrap; gap:8px; }
+  .photo-gallery .thumb{
+    position:relative; width:68px; height:68px; border-radius:8px; overflow:hidden;
+    border:1px solid var(--line); background:var(--paper-raised) center/cover no-repeat; flex-shrink:0;
+  }
+  .photo-gallery .thumb .rm{
+    position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%;
+    background:rgba(30,42,36,0.72); color:#fff; font-size:11px; line-height:18px; text-align:center;
+    border:none; cursor:pointer; padding:0;
+  }
+  .photo-add-btn{
+    width:68px; height:68px; border-radius:8px; border:1.5px dashed var(--line);
+    background:var(--paper-raised); color:var(--muted); font-size:24px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .doc-photos-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+  .doc-photos-row .doc-thumb{ width:90px; height:90px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
+  .photo-count-badge{
+    position:absolute; bottom:3px; right:3px; background:rgba(30,42,36,0.75); color:#fff;
+    font-size:10px; font-weight:700; border-radius:20px; padding:1px 6px;
+  }
 
   .sheet-actions{
     display:flex; gap:10px; padding:18px 18px 6px;
@@ -321,7 +350,8 @@ let exhibitions = [];      // [{id, name, date}]
 let currentExhibitionId = null;
 let entriesCache = {};     // exhibitionId -> [entries]
 let editingEntry = null;   // entry being edited (or null = new)
-let pendingPhoto = null;   // dataURL staged for the open form
+let pendingPhotos = [];    // 登録中の記録に紐づく写真（複数）
+let pendingBusinessCard = null; // 登録中の記録に紐づく名刺の写真（1枚）
 
 const TYPES = [
   { key:'catalog', label:'カタログ' },
@@ -337,6 +367,12 @@ function getEntryTypes(en){
 }
 function typeLabelsJoined(en){
   return getEntryTypes(en).map(typeLabel).join('・');
+}
+// entry.photos（配列）を正とし、旧バージョンのentry.photo（単数）にも対応
+function getEntryPhotos(en){
+  if(!en) return [];
+  if(Array.isArray(en.photos)) return en.photos;
+  return en.photo ? [en.photo] : [];
 }
 
 function todayStr(){
@@ -722,13 +758,13 @@ async function generateWordDoc(exId){
       const runs = lines.map((line,i)=> (i===0?'':'<w:br/>') + `<w:t xml:space="preserve">${esc(line)}</w:t>`).join('');
       bodyXml += `<w:p><w:r>${runs}</w:r></w:p>`;
     }
-    if(en.photo){
+    for(const photo of getEntryPhotos(en)){
       imgIndex++;
-      const dims = await _getImageDimensions(en.photo);
+      const dims = await _getImageDimensions(photo);
       const cx = 3600000; // 幅 約3.94インチ
       const cy = Math.max(1, Math.round(cx * (dims.h / dims.w)));
       const mediaName = `image${imgIndex}.jpeg`;
-      mediaFiles.push({ name:`word/media/${mediaName}`, data:_dataUrlToBytes(en.photo) });
+      mediaFiles.push({ name:`word/media/${mediaName}`, data:_dataUrlToBytes(photo) });
       const rId = `rId${imgIndex}`;
       relEntries.push({ id:rId, target:`media/${mediaName}` });
       bodyXml += `<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${imgIndex}" name="Picture ${imgIndex}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${imgIndex}" name="Picture ${imgIndex}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
@@ -768,13 +804,13 @@ async function generateWordDoc(exId){
   showToast('Wordファイルを作成しました');
 }
 
-const CSV_HEADER = ['展示会名','日付','出展社名','ふりがな','業種','担当者名','種別','メモ','写真の有無'];
+const CSV_HEADER = ['展示会名','日付','出展社名','ふりがな','業種','担当者名','メールアドレス','種別','メモ','写真枚数','名刺写真'];
 async function exportExhibitionCSV(exId){
   const ex = exhibitions.find(e=>e.id===exId);
   if(!ex) return;
   const entries = sortEntriesByCompany(await loadEntries(exId));
   if(entries.length === 0){ showToast('書き出す記録がありません'); return; }
-  const rows = entries.map(en => [ex.name, en.date, en.company, en.furigana||'', en.industry, en.contact, typeLabelsJoined(en), en.memo, en.photo ? '有' : '無']);
+  const rows = entries.map(en => [ex.name, en.date, en.company, en.furigana||'', en.industry, en.contact, en.email||'', typeLabelsJoined(en), en.memo, getEntryPhotos(en).length, en.businessCardPhoto ? '有' : '無']);
   downloadCSV(`${sanitizeFilename(ex.name)}.csv`, buildCSV(CSV_HEADER, rows));
   showToast('CSVを書き出しました');
 }
@@ -785,7 +821,7 @@ async function exportAllCSV(){
   for(const ex of sorted){
     const entries = sortEntriesByCompany(await loadEntries(ex.id));
     for(const en of entries){
-      rows.push([ex.name, en.date, en.company, en.furigana||'', en.industry, en.contact, typeLabelsJoined(en), en.memo, en.photo ? '有' : '無']);
+      rows.push([ex.name, en.date, en.company, en.furigana||'', en.industry, en.contact, en.email||'', typeLabelsJoined(en), en.memo, getEntryPhotos(en).length, en.businessCardPhoto ? '有' : '無']);
     }
   }
   if(rows.length === 0){ showToast('書き出す記録がありません'); return; }
@@ -841,7 +877,7 @@ async function openDocumentPreview(exId){
         <div class="doc-company">${esc(en.company) || '（社名未入力）'}</div>
         ${en.industry ? `<div class="doc-industry">${esc(en.industry)}</div>` : ''}
         ${en.memo ? `<div class="doc-memo">${esc(en.memo)}</div>` : ''}
-        ${en.photo ? `<img class="doc-photo" src="${en.photo}">` : ''}
+        ${getEntryPhotos(en).map(p=>`<img class="doc-photo" src="${p}">`).join('')}
       </div>
     `).join('');
   overlay.innerHTML = `
@@ -936,8 +972,10 @@ async function openExhibition(id){
   let html = '<div>';
   for(const en of sorted){
     const types = getEntryTypes(en);
+    const photos = getEntryPhotos(en);
+    const thumbSrc = photos[0] || en.businessCardPhoto;
     html += `<div class="entry-card" onclick="openEntryDetail('${en.id}')">
-      <div class="entry-thumb" style="${en.photo ? `background-image:url('${en.photo}')` : ''}">${en.photo ? '' : '写真\nなし'}</div>
+      <div class="entry-thumb" style="${thumbSrc ? `background-image:url('${thumbSrc}')` : ''}">${thumbSrc ? '' : '写真\nなし'}${photos.length > 1 ? `<span class="photo-count-badge">${photos.length}</span>` : ''}</div>
       <div class="entry-info">
         <div class="entry-top">
           <div class="entry-company">${esc(en.company) || '（社名未入力）'}</div>
@@ -1026,7 +1064,8 @@ async function deleteExhibition(id){
 /* ---------- entry add / edit ---------- */
 function openEntryForm(entry){
   editingEntry = entry || null;
-  pendingPhoto = entry ? entry.photo : null;
+  pendingPhotos = getEntryPhotos(entry).slice();
+  pendingBusinessCard = entry ? (entry.businessCardPhoto || null) : null;
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.id = 'entryOverlay';
@@ -1060,6 +1099,10 @@ function openEntryForm(entry){
           <input type="text" id="fContact" value="${entry ? esc(entry.contact) : ''}" placeholder="山田 太郎 様">
         </div>
         <div class="field">
+          <label>メールアドレス</label>
+          <input type="email" id="fEmail" value="${entry ? esc(entry.email||'') : ''}" placeholder="example@example.com" autocapitalize="off" autocorrect="off">
+        </div>
+        <div class="field">
           <label>メモ</label>
           <textarea id="fMemo" placeholder="商談内容、印象、フォローアップ事項など">${entry ? esc(entry.memo) : ''}</textarea>
         </div>
@@ -1068,15 +1111,18 @@ function openEntryForm(entry){
           <input type="date" id="fDate" value="${entry ? entry.date : todayStr()}">
         </div>
         <div class="field">
-          <label>写真</label>
-          <div class="photo-picker">
-            <div class="photo-preview" id="photoPreview" style="${pendingPhoto ? `background-image:url('${pendingPhoto}')` : ''}">${pendingPhoto ? '' : 'なし'}</div>
-            <div class="photo-btns">
-              <button type="button" class="btn-outline" onclick="document.getElementById('photoInput').click()">ギャラリーから選ぶ</button>
-              ${pendingPhoto ? `<button type="button" class="btn-outline danger" onclick="clearPhoto()">写真を削除</button>` : ''}
-            </div>
-            <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="handlePhotoSelect(event)">
-          </div>
+          <label>写真（複数可）</label>
+          <div class="photo-gallery" id="photoGallery"></div>
+          <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotosSelect(event)">
+        </div>
+        <div class="field">
+          <label>名刺の写真（写真を長押しするとテキストを選択・コピーできます）</label>
+          <div class="card-preview-wrap" id="cardPreview"></div>
+          <div class="photo-btns" id="cardBtns" style="flex-direction:row; gap:10px; margin-top:10px;"></div>
+          <input type="file" id="cardInput" accept="image/*" style="display:none" onchange="handleBusinessCardSelect(event)">
+          <p style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6;">
+            iPhoneならLive Text、Androidも同様の機能で、名刺の写真を長押しするとメールアドレスなどの文字を選択してコピーできます。コピーした内容は上の「メールアドレス」欄などに貼り付けてください。
+          </p>
         </div>
       </div>
       <div class="sheet-actions">
@@ -1087,6 +1133,8 @@ function openEntryForm(entry){
   `;
   document.body.appendChild(overlay);
   overlay.dataset.selectedTypes = getEntryTypes(entry).join(',');
+  renderPhotoGallery();
+  renderBusinessCardPreview();
 }
 function selectType(key){
   const overlay = document.getElementById('entryOverlay');
@@ -1104,56 +1152,78 @@ function selectType(key){
     btn.classList.toggle('active', current.includes(btnKey));
   });
 }
-function clearPhoto(){
-  pendingPhoto = null;
-  const overlay = document.getElementById('entryOverlay');
-  // re-render form fully to refresh photo controls, keep entered values
-  const company = document.getElementById('fCompany').value;
-  const furigana = document.getElementById('fFurigana').value;
-  const industry = document.getElementById('fIndustry').value;
-  const contact = document.getElementById('fContact').value;
-  const memo = document.getElementById('fMemo').value;
-  const date = document.getElementById('fDate').value;
-  const types = overlay.dataset.selectedTypes ? overlay.dataset.selectedTypes.split(',').filter(Boolean) : [];
-  closeOverlay('entryOverlay');
-  openEntryForm(editingEntry ? {...editingEntry, company, furigana, industry, contact, memo, date, types, photo:null} : {company, furigana, industry, contact, memo, date, types, photo:null, __isDraft:true});
-}
-function handlePhotoSelect(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev){
-    const img = new Image();
-    img.onload = function(){
-      const maxW = 900;
-      const scale = Math.min(1, maxW / img.width);
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.72);
-      pendingPhoto = dataUrl;
-      const preview = document.getElementById('photoPreview');
-      if(preview){
-        preview.style.backgroundImage = `url('${dataUrl}')`;
-        preview.textContent = '';
-      }
-      // add delete button if not present
-      const overlay = document.getElementById('entryOverlay');
-      if(overlay && !overlay.querySelector('.photo-btns .danger')){
-        const btnGroup = overlay.querySelector('.photo-btns');
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'btn-outline danger';
-        delBtn.textContent = '写真を削除';
-        delBtn.onclick = clearPhoto;
-        btnGroup.appendChild(delBtn);
-      }
+function _compressImageFile(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      const img = new Image();
+      img.onload = function(){
+        const maxW = 900;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.onerror = reject;
+      img.src = ev.target.result;
     };
-    img.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function renderPhotoGallery(){
+  const wrap = document.getElementById('photoGallery');
+  if(!wrap) return;
+  wrap.innerHTML = pendingPhotos.map((p,i)=>`
+    <div class="thumb" style="background-image:url('${p}')">
+      <button type="button" class="rm" onclick="removePendingPhoto(${i})">✕</button>
+    </div>
+  `).join('') + `<button type="button" class="photo-add-btn" onclick="document.getElementById('photoInput').click()">＋</button>`;
+}
+function removePendingPhoto(idx){
+  pendingPhotos.splice(idx, 1);
+  renderPhotoGallery();
+}
+async function handlePhotosSelect(e){
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  if(files.length === 0) return;
+  for(const file of files){
+    try{
+      const dataUrl = await _compressImageFile(file);
+      pendingPhotos.push(dataUrl);
+    }catch(err){ /* このファイルはスキップ */ }
+  }
+  renderPhotoGallery();
+}
+function renderBusinessCardPreview(){
+  const preview = document.getElementById('cardPreview');
+  const btnGroup = document.getElementById('cardBtns');
+  if(!preview || !btnGroup) return;
+  // Live Text（iOS）/ テキスト選択（Android）はCSS背景画像には効かないため、実体の<img>で表示する
+  preview.innerHTML = pendingBusinessCard
+    ? `<img src="${pendingBusinessCard}" alt="名刺の写真">`
+    : `<span>名刺の写真はまだありません</span>`;
+  btnGroup.innerHTML = `<button type="button" class="btn-outline" onclick="document.getElementById('cardInput').click()">ギャラリーから選ぶ</button>` +
+    (pendingBusinessCard ? `<button type="button" class="btn-outline danger" onclick="clearBusinessCard()">写真を削除</button>` : '');
+}
+async function handleBusinessCardSelect(e){
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  try{
+    pendingBusinessCard = await _compressImageFile(file);
+    renderBusinessCardPreview();
+  }catch(err){
+    showToast('写真の読み込みに失敗しました');
+  }
+}
+function clearBusinessCard(){
+  pendingBusinessCard = null;
+  renderBusinessCardPreview();
 }
 async function saveEntryForm(){
   const overlay = document.getElementById('entryOverlay');
@@ -1161,9 +1231,12 @@ async function saveEntryForm(){
   const furigana = document.getElementById('fFurigana').value.trim();
   const industry = document.getElementById('fIndustry').value.trim();
   const contact = document.getElementById('fContact').value.trim();
+  const email = document.getElementById('fEmail').value.trim();
   const memo = document.getElementById('fMemo').value.trim();
   const date = document.getElementById('fDate').value || todayStr();
   const types = overlay.dataset.selectedTypes ? overlay.dataset.selectedTypes.split(',').filter(Boolean) : [];
+  const photos = [...pendingPhotos];
+  const businessCardPhoto = pendingBusinessCard;
 
   if(!company){ showToast('出展社名を入力してください'); return; }
 
@@ -1171,22 +1244,24 @@ async function saveEntryForm(){
   if(editingEntry && editingEntry.id){
     const idx = entries.findIndex(e=>e.id===editingEntry.id);
     if(idx > -1){
-      entries[idx] = {...entries[idx], company, furigana, industry, contact, memo, date, types, type: undefined, photo: pendingPhoto};
+      entries[idx] = {...entries[idx], company, furigana, industry, contact, email, memo, date, types, type: undefined, photos, photo: undefined, businessCardPhoto};
     }
   }else{
     entries.push({
-      id: uid(), company, furigana, industry, contact, memo, date, types,
-      photo: pendingPhoto, createdAt: Date.now()
+      id: uid(), company, furigana, industry, contact, email, memo, date, types,
+      photos, businessCardPhoto, createdAt: Date.now()
     });
   }
   entriesCache[currentExhibitionId] = entries;
   await saveEntries(currentExhibitionId);
   closeOverlay('entryOverlay');
   editingEntry = null;
-  pendingPhoto = null;
+  pendingPhotos = [];
+  pendingBusinessCard = null;
   openExhibition(currentExhibitionId);
   showToast('保存しました');
 }
+
 
 /* ---------- entry detail ---------- */
 async function openEntryDetail(entryId){
@@ -1203,13 +1278,15 @@ async function openEntryDetail(entryId){
         <button class="close" onclick="closeOverlay('detailOverlay')">✕</button>
       </div>
       <div class="sheet-body">
-        ${en.photo ? `<img class="detail-photo" src="${en.photo}">` : ''}
+        ${getEntryPhotos(en).map(p=>`<img class="detail-photo" src="${p}">`).join('')}
         <div class="detail-row"><div class="k">種別</div><div class="v">${getEntryTypes(en).length ? getEntryTypes(en).map(t=>`<span class="tag ${t}" style="margin-right:6px;">${typeLabel(t)}</span>`).join('') : '－'}</div></div>
         ${en.furigana ? `<div class="detail-row"><div class="k">ふりがな</div><div class="v">${esc(en.furigana)}</div></div>` : ''}
         <div class="detail-row"><div class="k">業種</div><div class="v">${esc(en.industry) || '－'}</div></div>
         <div class="detail-row"><div class="k">担当者名</div><div class="v">${esc(en.contact) || '－'}</div></div>
+        <div class="detail-row"><div class="k">メールアドレス</div><div class="v">${esc(en.email) || '－'}</div></div>
         <div class="detail-row"><div class="k">メモ</div><div class="v">${esc(en.memo) || '－'}</div></div>
         <div class="detail-row"><div class="k">日付</div><div class="v">${fmtDate(en.date)}</div></div>
+        ${en.businessCardPhoto ? `<div class="detail-row"><div class="k">名刺</div><div class="v"><img class="detail-photo" src="${en.businessCardPhoto}" style="margin-bottom:0;"></div></div>` : ''}
       </div>
       <div class="sheet-actions">
         <button class="btn-secondary" onclick="deleteEntry('${en.id}')">削除</button>
@@ -1241,7 +1318,8 @@ function closeOverlay(id){
   const el = document.getElementById(id);
   if(el) el.remove();
   editingEntry = null;
-  pendingPhoto = null;
+  pendingPhotos = [];
+  pendingBusinessCard = null;
 }
 
 /* ---------- PWA: service worker registration (オフライン対応) ---------- */
