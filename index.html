@@ -575,7 +575,7 @@ async function handleBackupFile(e){
       await saveExhibitions();
       closeOverlay('menuOverlay');
       closeOverlay('exportSheetOverlay');
-      if(currentExhibitionId === exMeta.id) openExhibition(exMeta.id); else renderHome();
+      if(currentExhibitionId === exMeta.id) renderExhibitionView(exMeta.id); else renderHome();
       showToast('この展示会を復元しました');
       return;
     }
@@ -946,11 +946,16 @@ async function renderHome(){
 
 /* ---------- rendering: exhibition detail ---------- */
 async function openExhibition(id){
+  pushNavState({ view:'exhibition', id });
+  await renderExhibitionView(id);
+}
+async function renderExhibitionView(id){
   currentExhibitionId = id;
   const ex = exhibitions.find(e=>e.id===id);
+  if(!ex){ renderHome(); return; }
   const header = document.getElementById('header');
   header.innerHTML = `
-    <button class="back" onclick="renderHome()">←</button>
+    <button class="back" onclick="history.back()">←</button>
     <h1 id="headerTitle">${esc(ex.name)}</h1>
     <button class="head-action" onclick="openExportSheet('${id}')">書き出し</button>
   `;
@@ -1113,13 +1118,19 @@ function openEntryForm(entry){
         <div class="field">
           <label>写真（複数可）</label>
           <div class="photo-gallery" id="photoGallery"></div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;">
+            <button type="button" class="btn-outline" style="flex:1;" onclick="document.getElementById('photoInput').click()">ギャラリーから選ぶ</button>
+            <button type="button" class="btn-outline" style="flex:1;" onclick="document.getElementById('photoCameraInput').click()">カメラで撮影</button>
+          </div>
           <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotosSelect(event)">
+          <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotosSelect(event)">
         </div>
         <div class="field">
           <label>名刺の写真（写真を長押しするとテキストを選択・コピーできます）</label>
           <div class="card-preview-wrap" id="cardPreview"></div>
-          <div class="photo-btns" id="cardBtns" style="flex-direction:row; gap:10px; margin-top:10px;"></div>
+          <div class="photo-btns" id="cardBtns" style="flex-direction:row; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
           <input type="file" id="cardInput" accept="image/*" style="display:none" onchange="handleBusinessCardSelect(event)">
+          <input type="file" id="cardCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBusinessCardSelect(event)">
           <p style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6;">
             iPhoneならLive Text、Androidも同様の機能で、名刺の写真を長押しするとメールアドレスなどの文字を選択してコピーできます。コピーした内容は上の「メールアドレス」欄などに貼り付けてください。
           </p>
@@ -1181,7 +1192,7 @@ function renderPhotoGallery(){
     <div class="thumb" style="background-image:url('${p}')">
       <button type="button" class="rm" onclick="removePendingPhoto(${i})">✕</button>
     </div>
-  `).join('') + `<button type="button" class="photo-add-btn" onclick="document.getElementById('photoInput').click()">＋</button>`;
+  `).join('');
 }
 function removePendingPhoto(idx){
   pendingPhotos.splice(idx, 1);
@@ -1208,6 +1219,7 @@ function renderBusinessCardPreview(){
     ? `<img src="${pendingBusinessCard}" alt="名刺の写真">`
     : `<span>名刺の写真はまだありません</span>`;
   btnGroup.innerHTML = `<button type="button" class="btn-outline" onclick="document.getElementById('cardInput').click()">ギャラリーから選ぶ</button>` +
+    `<button type="button" class="btn-outline" onclick="document.getElementById('cardCameraInput').click()">カメラで撮影</button>` +
     (pendingBusinessCard ? `<button type="button" class="btn-outline danger" onclick="clearBusinessCard()">写真を削除</button>` : '');
 }
 async function handleBusinessCardSelect(e){
@@ -1258,13 +1270,17 @@ async function saveEntryForm(){
   editingEntry = null;
   pendingPhotos = [];
   pendingBusinessCard = null;
-  openExhibition(currentExhibitionId);
+  renderExhibitionView(currentExhibitionId);
   showToast('保存しました');
 }
 
 
 /* ---------- entry detail ---------- */
 async function openEntryDetail(entryId){
+  pushNavState({ view:'entry', exId: currentExhibitionId, entryId });
+  await renderEntryDetailView(entryId);
+}
+async function renderEntryDetailView(entryId){
   const entries = await loadEntries(currentExhibitionId);
   const en = entries.find(e=>e.id===entryId);
   if(!en) return;
@@ -1275,7 +1291,7 @@ async function openEntryDetail(entryId){
     <div class="sheet">
       <div class="sheet-head">
         <h2>${esc(en.company)}</h2>
-        <button class="close" onclick="closeOverlay('detailOverlay')">✕</button>
+        <button class="close" onclick="history.back()">✕</button>
       </div>
       <div class="sheet-body">
         ${getEntryPhotos(en).map(p=>`<img class="detail-photo" src="${p}">`).join('')}
@@ -1308,8 +1324,7 @@ async function deleteEntry(entryId){
   entries = entries.filter(e=>e.id!==entryId);
   entriesCache[currentExhibitionId] = entries;
   await saveEntries(currentExhibitionId);
-  closeOverlay('detailOverlay');
-  openExhibition(currentExhibitionId);
+  history.back(); // 詳細画面ぶんの履歴を消費し、popstate側で一覧を再描画させる
   showToast('削除しました');
 }
 
@@ -1322,6 +1337,25 @@ function closeOverlay(id){
   pendingBusinessCard = null;
 }
 
+/* ---------- ブラウザ/端末の「戻る」操作をアプリ内のナビゲーションとして扱う ---------- */
+// 展示会の一覧を開く・個別の記録を開くたびに履歴を1段積み、
+// 端末の「戻る」ボタン/スワイプでアプリを閉じずに1つ前の画面へ戻れるようにする。
+function pushNavState(state){
+  history.pushState(state, '', location.href);
+}
+window.addEventListener('popstate', (e) => {
+  const state = e.state;
+  if(!state || state.view === 'home'){
+    closeOverlay('detailOverlay');
+    renderHome();
+  }else if(state.view === 'exhibition'){
+    closeOverlay('detailOverlay');
+    renderExhibitionView(state.id);
+  }else if(state.view === 'entry'){
+    renderExhibitionView(state.exId).then(()=> renderEntryDetailView(state.entryId));
+  }
+});
+
 /* ---------- PWA: service worker registration (オフライン対応) ---------- */
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
@@ -1332,6 +1366,7 @@ if('serviceWorker' in navigator){
 /* ---------- init ---------- */
 (async function init(){
   document.getElementById('main').innerHTML = `<div class="empty"><p>読み込み中…</p></div>`;
+  history.replaceState({ view:'home' }, '', location.href);
   await migrateFromLocalStorageIfNeeded();
   await loadExhibitions();
   await renderHome();
