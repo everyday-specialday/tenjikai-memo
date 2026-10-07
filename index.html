@@ -264,17 +264,50 @@
     background:rgba(30,42,36,0.72); color:#fff; font-size:11px; line-height:18px; text-align:center;
     border:none; cursor:pointer; padding:0;
   }
+  .photo-gallery .thumb .edit-badge{
+    position:absolute; bottom:2px; left:2px; width:20px; height:20px; border-radius:50%;
+    background:rgba(30,42,36,0.72); color:#fff; font-size:11px; line-height:20px; text-align:center;
+    border:none; cursor:pointer; padding:0;
+  }
   .photo-add-btn{
     width:68px; height:68px; border-radius:8px; border:1.5px dashed var(--line);
     background:var(--paper-raised); color:var(--muted); font-size:24px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
+  .overview-box{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
+    padding:12px 14px; margin-bottom:14px;
+  }
+  .overview-box label{
+    display:block; font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:6px;
+  }
+  .overview-box textarea{
+    width:100%; min-height:60px; border:none; background:none; resize:vertical;
+    font-size:14px; color:var(--ink); font-family:inherit; padding:0;
+  }
+  .overview-box textarea:focus{ outline:none; }
   .doc-photos-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
   .doc-photos-row .doc-thumb{ width:90px; height:90px; object-fit:cover; border-radius:6px; border:1px solid var(--line); }
   .photo-count-badge{
     position:absolute; bottom:3px; right:3px; background:rgba(30,42,36,0.75); color:#fff;
     font-size:10px; font-weight:700; border-radius:20px; padding:1px 6px;
   }
+
+  /* ---------- 写真編集（回転・トリミング） ---------- */
+  #editorStage{ touch-action:none; }
+  #editorImg{ display:block; max-width:none; user-select:none; -webkit-user-drag:none; }
+  .crop-box{
+    position:absolute; border:2px solid #fff; box-shadow:0 0 0 9999px rgba(0,0,0,0.5);
+    touch-action:none; box-sizing:border-box;
+  }
+  .crop-handle{
+    position:absolute; width:26px; height:26px; margin:-13px; background:#fff;
+    border-radius:50%; border:2px solid var(--accent); touch-action:none;
+  }
+  .crop-handle.nw{ top:0; left:0; cursor:nwse-resize; }
+  .crop-handle.ne{ top:0; left:100%; cursor:nesw-resize; }
+  .crop-handle.sw{ top:100%; left:0; cursor:nesw-resize; }
+  .crop-handle.se{ top:100%; left:100%; cursor:nwse-resize; }
 
   .sheet-actions{
     display:flex; gap:10px; padding:18px 18px 6px;
@@ -495,6 +528,16 @@ async function loadExhibitions(){
 async function saveExhibitions(){
   const ok = await idbSet('exhibitions', exhibitions);
   if(!ok) showToast('保存に失敗しました');
+}
+// 展示会の概要欄：入力欄からフォーカスが外れたタイミングで自動保存する
+async function _saveOverview(exId){
+  const ta = document.getElementById('exOverview');
+  if(!ta) return;
+  const ex = exhibitions.find(e=>e.id===exId);
+  if(!ex) return;
+  if((ex.overview||'') === ta.value) return;
+  ex.overview = ta.value;
+  await saveExhibitions();
 }
 async function loadEntries(exId){
   if(entriesCache[exId]) return entriesCache[exId];
@@ -746,6 +789,12 @@ async function generateWordDoc(exId){
   const subText = [ex.date ? fmtDate(ex.date) : '', entries.length + '件'].filter(Boolean).join('　・　');
   bodyXml += `<w:p><w:r><w:t xml:space="preserve">${esc(subText)}</w:t></w:r></w:p>`;
   bodyXml += `<w:p/>`;
+  if(ex.overview){
+    const ovLines = ex.overview.split('\n');
+    const ovRuns = ovLines.map((line,i)=> (i===0?'':'<w:br/>') + `<w:t xml:space="preserve">${esc(line)}</w:t>`).join('');
+    bodyXml += `<w:p><w:r>${ovRuns}</w:r></w:p>`;
+    bodyXml += `<w:p/>`;
+  }
 
   let imgIndex = 0;
   for(const en of entries){
@@ -890,6 +939,7 @@ async function openDocumentPreview(exId){
         <div id="docPrintArea" class="doc-page">
           <div class="doc-title">${esc(ex.name)}</div>
           <div class="doc-sub">${ex.date ? fmtDate(ex.date) : ''}${entries.length ? ' ・ ' + entries.length + '件' : ''}</div>
+          ${ex.overview ? `<div class="doc-memo" style="margin-bottom:16px;">${esc(ex.overview)}</div>` : ''}
           ${bodyHtml}
         </div>
       </div>
@@ -962,8 +1012,13 @@ async function renderExhibitionView(id){
   const entries = await loadEntries(id);
   const main = document.getElementById('main');
 
+  const overviewHtml = `<div class="overview-box">
+    <label for="exOverview">展示会の概要・メモ</label>
+    <textarea id="exOverview" placeholder="会場、ブース番号、目的、全体の振り返りなど" onblur="_saveOverview('${id}')">${esc(ex.overview||'')}</textarea>
+  </div>`;
+
   if(entries.length === 0){
-    main.innerHTML = `<div class="empty">
+    main.innerHTML = overviewHtml + `<div class="empty">
       <div class="glyph">📇</div>
       <p>まだ記録がありません。</p>
       <p>右下の＋ボタンから出展社の記録を追加できます。</p>
@@ -974,7 +1029,7 @@ async function renderExhibitionView(id){
 
   // 五十音順（出展社名）
   const sorted = sortEntriesByCompany(entries);
-  let html = '<div>';
+  let html = overviewHtml + '<div>';
   for(const en of sorted){
     const types = getEntryTypes(en);
     const photos = getEntryPhotos(en);
@@ -1068,6 +1123,7 @@ async function deleteExhibition(id){
 
 /* ---------- entry add / edit ---------- */
 function openEntryForm(entry){
+  pushNavState({ view:'entryForm', exId: currentExhibitionId, entryId: entry ? entry.id : null });
   editingEntry = entry || null;
   pendingPhotos = getEntryPhotos(entry).slice();
   pendingBusinessCard = entry ? (entry.businessCardPhoto || null) : null;
@@ -1078,7 +1134,7 @@ function openEntryForm(entry){
     <div class="sheet">
       <div class="sheet-head">
         <h2>${entry ? '記録を編集' : '記録を追加'}</h2>
-        <button class="close" onclick="closeOverlay('entryOverlay')">✕</button>
+        <button class="close" onclick="cancelEntryForm()">✕</button>
       </div>
       <div class="sheet-body">
         <div class="field">
@@ -1123,21 +1179,21 @@ function openEntryForm(entry){
             <button type="button" class="btn-outline" style="flex:1;" onclick="document.getElementById('photoCameraInput').click()">カメラで撮影</button>
           </div>
           <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="handlePhotosSelect(event)">
-          <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotosSelect(event)">
+          <input type="file" id="photoCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhotosCameraSelect(event)">
         </div>
         <div class="field">
           <label>名刺の写真（写真を長押しするとテキストを選択・コピーできます）</label>
           <div class="card-preview-wrap" id="cardPreview"></div>
           <div class="photo-btns" id="cardBtns" style="flex-direction:row; flex-wrap:wrap; gap:8px; margin-top:10px;"></div>
           <input type="file" id="cardInput" accept="image/*" style="display:none" onchange="handleBusinessCardSelect(event)">
-          <input type="file" id="cardCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBusinessCardSelect(event)">
+          <input type="file" id="cardCameraInput" accept="image/*" capture="environment" style="display:none" onchange="handleBusinessCardCameraSelect(event)">
           <p style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6;">
             iPhoneならLive Text、Androidも同様の機能で、名刺の写真を長押しするとメールアドレスなどの文字を選択してコピーできます。コピーした内容は上の「メールアドレス」欄などに貼り付けてください。
           </p>
         </div>
       </div>
       <div class="sheet-actions">
-        <button class="btn-secondary" onclick="closeOverlay('entryOverlay')">キャンセル</button>
+        <button class="btn-secondary" onclick="cancelEntryForm()">キャンセル</button>
         <button class="btn-primary" onclick="saveEntryForm()">保存する</button>
       </div>
     </div>
@@ -1146,6 +1202,37 @@ function openEntryForm(entry){
   overlay.dataset.selectedTypes = getEntryTypes(entry).join(',');
   renderPhotoGallery();
   renderBusinessCardPreview();
+  _attachFuriganaAutofill(document.getElementById('fCompany'), document.getElementById('fFurigana'));
+}
+// 出展社名をIME入力する際、確定した文字がひらがな・カタカナだけ（漢字を含まない）であれば
+// ふりがな欄に自動で追記する。スマホのIMEは変換前の読みを個別に取得する方法が無く、
+// 確定時点ですでに漢字になっていることが多いため、漢字を含む場合は「同じ内容になる」誤りを防ぐために
+// 自動入力そのものをスキップする（＝ひらがな・カタカナで入力された部分だけが自動で入る）。
+// ふりがな欄を直接手入力した場合は、以降その欄への自動入力を止めてユーザーの入力を優先する。
+function _isKanaOnly(s){
+  return /^[\u3040-\u309F\u30A0-\u30FFー・\s]*$/.test(s);
+}
+function _katakanaToHiragana(s){
+  return s.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
+function _attachFuriganaAutofill(companyInput, furiganaInput){
+  if(!companyInput || !furiganaInput) return;
+  let buffer = '';
+  let programmaticSet = false;
+  companyInput.addEventListener('compositionstart', () => { buffer = ''; });
+  companyInput.addEventListener('compositionupdate', (e) => { buffer = e.data || ''; });
+  companyInput.addEventListener('compositionend', (e) => {
+    const reading = buffer || e.data || '';
+    if(reading && _isKanaOnly(reading) && furiganaInput.dataset.dirty !== '1'){
+      programmaticSet = true;
+      furiganaInput.value = (furiganaInput.value || '') + _katakanaToHiragana(reading);
+      programmaticSet = false;
+    }
+    buffer = '';
+  });
+  furiganaInput.addEventListener('input', () => {
+    if(!programmaticSet) furiganaInput.dataset.dirty = '1';
+  });
 }
 function selectType(key){
   const overlay = document.getElementById('entryOverlay');
@@ -1185,17 +1272,206 @@ function _compressImageFile(file){
     reader.readAsDataURL(file);
   });
 }
+function _fileToDataUrl(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=> resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- 写真編集（回転・トリミング） ---------- */
+let _editor = null; // 編集セッション中の状態
+function _loadImageElement(src){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=> resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+function _redrawEditorBase(){
+  const { srcImg, rotation } = _editor;
+  const rad = rotation * Math.PI / 180;
+  const swap = (rotation === 90 || rotation === 270);
+  const w = srcImg.naturalWidth, h = srcImg.naturalHeight;
+  const canvas = document.createElement('canvas');
+  canvas.width = swap ? h : w;
+  canvas.height = swap ? w : h;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(canvas.width/2, canvas.height/2);
+  ctx.rotate(rad);
+  ctx.drawImage(srcImg, -w/2, -h/2, w, h);
+  ctx.restore();
+  _editor.baseCanvas = canvas;
+}
+function _fitEditorDisplay(){
+  const stage = document.getElementById('editorStage');
+  const canvas = _editor.baseCanvas;
+  const maxW = stage.clientWidth - 24;
+  const maxH = stage.clientHeight - 24;
+  const scale = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
+  _editor.displayScale = scale;
+  _editor.displayW = Math.round(canvas.width * scale);
+  _editor.displayH = Math.round(canvas.height * scale);
+}
+function _renderEditor(){
+  _fitEditorDisplay();
+  const img = document.getElementById('editorImg');
+  img.src = _editor.baseCanvas.toDataURL('image/jpeg', 0.85);
+  img.style.width = _editor.displayW + 'px';
+  img.style.height = _editor.displayH + 'px';
+  resetEditorCrop();
+}
+function _renderCropBox(){
+  const box = document.getElementById('cropBox');
+  const c = _editor.crop;
+  box.style.left = c.x + 'px';
+  box.style.top = c.y + 'px';
+  box.style.width = c.w + 'px';
+  box.style.height = c.h + 'px';
+}
+function rotateEditorPhoto(){
+  _editor.rotation = (_editor.rotation + 90) % 360;
+  _redrawEditorBase();
+  _renderEditor();
+}
+function resetEditorCrop(){
+  _editor.crop = { x:0, y:0, w:_editor.displayW, h:_editor.displayH };
+  _renderCropBox();
+}
+function _clampCrop(){
+  const c = _editor.crop;
+  const minSize = 40;
+  c.w = Math.max(minSize, Math.min(c.w, _editor.displayW));
+  c.h = Math.max(minSize, Math.min(c.h, _editor.displayH));
+  c.x = Math.max(0, Math.min(c.x, _editor.displayW - c.w));
+  c.y = Math.max(0, Math.min(c.y, _editor.displayH - c.h));
+}
+function _editorPointerDown(e, mode){
+  e.preventDefault();
+  e.stopPropagation();
+  const startX = e.clientX, startY = e.clientY;
+  const startCrop = { ..._editor.crop };
+  function move(ev){
+    const dx = ev.clientX - startX, dy = ev.clientY - startY;
+    const c = _editor.crop;
+    if(mode === 'move'){
+      c.x = startCrop.x + dx;
+      c.y = startCrop.y + dy;
+    }else{
+      if(mode.includes('n')){ c.y = startCrop.y + dy; c.h = startCrop.h - dy; }
+      if(mode.includes('s')){ c.h = startCrop.h + dy; }
+      if(mode.includes('w')){ c.x = startCrop.x + dx; c.w = startCrop.w - dx; }
+      if(mode.includes('e')){ c.w = startCrop.w + dx; }
+    }
+    _clampCrop();
+    _renderCropBox();
+  }
+  function up(){
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  }
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+function _finalizeCanvasToJpeg(canvas){
+  const maxW = 900;
+  if(canvas.width <= maxW) return canvas.toDataURL('image/jpeg', 0.72);
+  const scale = maxW / canvas.width;
+  const out = document.createElement('canvas');
+  out.width = maxW;
+  out.height = Math.round(canvas.height * scale);
+  out.getContext('2d').drawImage(canvas, 0, 0, out.width, out.height);
+  return out.toDataURL('image/jpeg', 0.72);
+}
+function applyEditorCrop(){
+  const c = _editor.crop;
+  const s = _editor.displayScale;
+  const sx = c.x / s, sy = c.y / s, sw = c.w / s, sh = c.h / s;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sw));
+  canvas.height = Math.max(1, Math.round(sh));
+  canvas.getContext('2d').drawImage(_editor.baseCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  const result = _finalizeCanvasToJpeg(canvas);
+  const resolve = _editor.resolve;
+  document.getElementById('photoEditorOverlay').remove();
+  _editor = null;
+  resolve(result);
+}
+function cancelEditorPhoto(){
+  const resolve = _editor.resolve;
+  const original = _editor.originalDataUrl;
+  document.getElementById('photoEditorOverlay').remove();
+  _editor = null;
+  resolve(original);
+}
+async function _openPhotoEditor(dataUrl){
+  const srcImg = await _loadImageElement(dataUrl);
+  return new Promise((resolve)=>{
+    _editor = { srcImg, rotation:0, originalDataUrl: dataUrl, resolve };
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.id = 'photoEditorOverlay';
+    overlay.innerHTML = `
+      <div class="sheet" style="height:92vh; max-height:92vh; display:flex; flex-direction:column;">
+        <div class="sheet-head no-print">
+          <h2>写真を編集</h2>
+          <button class="close" onclick="cancelEditorPhoto()">✕</button>
+        </div>
+        <div id="editorStage" style="flex:1; position:relative; display:flex; align-items:center; justify-content:center; background:#111; overflow:hidden;">
+          <div style="position:relative;">
+            <img id="editorImg" alt="編集中の写真">
+            <div class="crop-box" id="cropBox">
+              <div class="crop-handle nw"></div>
+              <div class="crop-handle ne"></div>
+              <div class="crop-handle sw"></div>
+              <div class="crop-handle se"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-actions no-print" style="flex-wrap:wrap;">
+          <button class="btn-secondary" onclick="rotateEditorPhoto()">↺ 90°回転</button>
+          <button class="btn-secondary" onclick="resetEditorCrop()">リセット</button>
+          <button class="btn-primary" style="flex:1;" onclick="applyEditorCrop()">適用する</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    _redrawEditorBase();
+    _renderEditor();
+
+    const box = document.getElementById('cropBox');
+    box.addEventListener('pointerdown', (e)=>{
+      if(e.target.classList.contains('crop-handle')) return;
+      _editorPointerDown(e, 'move');
+    });
+    box.querySelector('.nw').addEventListener('pointerdown', (e)=>_editorPointerDown(e,'nw'));
+    box.querySelector('.ne').addEventListener('pointerdown', (e)=>_editorPointerDown(e,'ne'));
+    box.querySelector('.sw').addEventListener('pointerdown', (e)=>_editorPointerDown(e,'sw'));
+    box.querySelector('.se').addEventListener('pointerdown', (e)=>_editorPointerDown(e,'se'));
+  });
+}
+
+/* ---------- 写真（複数可） ---------- */
 function renderPhotoGallery(){
   const wrap = document.getElementById('photoGallery');
   if(!wrap) return;
   wrap.innerHTML = pendingPhotos.map((p,i)=>`
     <div class="thumb" style="background-image:url('${p}')">
+      <button type="button" class="edit-badge" onclick="editPendingPhoto(${i})">✎</button>
       <button type="button" class="rm" onclick="removePendingPhoto(${i})">✕</button>
     </div>
   `).join('');
 }
 function removePendingPhoto(idx){
   pendingPhotos.splice(idx, 1);
+  renderPhotoGallery();
+}
+async function editPendingPhoto(idx){
+  pendingPhotos[idx] = await _openPhotoEditor(pendingPhotos[idx]);
   renderPhotoGallery();
 }
 async function handlePhotosSelect(e){
@@ -1210,6 +1486,21 @@ async function handlePhotosSelect(e){
   }
   renderPhotoGallery();
 }
+async function handlePhotosCameraSelect(e){
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  if(files.length === 0) return;
+  for(const file of files){
+    try{
+      const raw = await _fileToDataUrl(file);
+      const edited = await _openPhotoEditor(raw);
+      pendingPhotos.push(edited);
+    }catch(err){ /* このファイルはスキップ */ }
+  }
+  renderPhotoGallery();
+}
+
+/* ---------- 名刺の写真 ---------- */
 function renderBusinessCardPreview(){
   const preview = document.getElementById('cardPreview');
   const btnGroup = document.getElementById('cardBtns');
@@ -1220,6 +1511,7 @@ function renderBusinessCardPreview(){
     : `<span>名刺の写真はまだありません</span>`;
   btnGroup.innerHTML = `<button type="button" class="btn-outline" onclick="document.getElementById('cardInput').click()">ギャラリーから選ぶ</button>` +
     `<button type="button" class="btn-outline" onclick="document.getElementById('cardCameraInput').click()">カメラで撮影</button>` +
+    (pendingBusinessCard ? `<button type="button" class="btn-outline" onclick="editPendingBusinessCard()">編集する</button>` : '') +
     (pendingBusinessCard ? `<button type="button" class="btn-outline danger" onclick="clearBusinessCard()">写真を削除</button>` : '');
 }
 async function handleBusinessCardSelect(e){
@@ -1233,12 +1525,39 @@ async function handleBusinessCardSelect(e){
     showToast('写真の読み込みに失敗しました');
   }
 }
+async function handleBusinessCardCameraSelect(e){
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  try{
+    const raw = await _fileToDataUrl(file);
+    pendingBusinessCard = await _openPhotoEditor(raw);
+    renderBusinessCardPreview();
+  }catch(err){
+    showToast('写真の読み込みに失敗しました');
+  }
+}
+async function editPendingBusinessCard(){
+  pendingBusinessCard = await _openPhotoEditor(pendingBusinessCard);
+  renderBusinessCardPreview();
+}
 function clearBusinessCard(){
   pendingBusinessCard = null;
   renderBusinessCardPreview();
 }
-async function saveEntryForm(){
+function cancelEntryForm(){
   const overlay = document.getElementById('entryOverlay');
+  if(overlay) overlay.dataset.discard = '1';
+  history.back();
+}
+async function saveEntryForm(){
+  // 保存ボタン：入力チェックのみ行い、問題なければ「戻る」として扱う。
+  // 実際の保存処理は、戻り先の画面を出し分けられるようpopstate側（_teardownEntryOverlayIfOpen）でまとめて行う。
+  const company = document.getElementById('fCompany').value.trim();
+  if(!company){ showToast('出展社名を入力してください'); return; }
+  history.back();
+}
+async function _persistEntryFormFromOverlay(overlay){
   const company = document.getElementById('fCompany').value.trim();
   const furigana = document.getElementById('fFurigana').value.trim();
   const industry = document.getElementById('fIndustry').value.trim();
@@ -1249,8 +1568,6 @@ async function saveEntryForm(){
   const types = overlay.dataset.selectedTypes ? overlay.dataset.selectedTypes.split(',').filter(Boolean) : [];
   const photos = [...pendingPhotos];
   const businessCardPhoto = pendingBusinessCard;
-
-  if(!company){ showToast('出展社名を入力してください'); return; }
 
   const entries = await loadEntries(currentExhibitionId);
   if(editingEntry && editingEntry.id){
@@ -1266,13 +1583,22 @@ async function saveEntryForm(){
   }
   entriesCache[currentExhibitionId] = entries;
   await saveEntries(currentExhibitionId);
-  closeOverlay('entryOverlay');
+}
+// entryOverlayが開いていれば、キャンセルでない限り入力内容を保存してから閉じる（明示的な保存ボタン・端末の「戻る」操作の両方がここを通る）
+async function _teardownEntryOverlayIfOpen(){
+  const overlay = document.getElementById('entryOverlay');
+  if(!overlay) return;
+  const company = document.getElementById('fCompany').value.trim();
+  if(overlay.dataset.discard !== '1' && company){
+    await _persistEntryFormFromOverlay(overlay);
+    showToast('保存しました');
+  }
+  overlay.remove();
   editingEntry = null;
   pendingPhotos = [];
   pendingBusinessCard = null;
-  renderExhibitionView(currentExhibitionId);
-  showToast('保存しました');
 }
+
 
 
 /* ---------- entry detail ---------- */
@@ -1343,7 +1669,8 @@ function closeOverlay(id){
 function pushNavState(state){
   history.pushState(state, '', location.href);
 }
-window.addEventListener('popstate', (e) => {
+window.addEventListener('popstate', async (e) => {
+  await _teardownEntryOverlayIfOpen(); // 記録の追加・編集フォームが開いていれば、保存（またはキャンセル時は破棄）してから閉じる
   const state = e.state;
   if(!state || state.view === 'home'){
     closeOverlay('detailOverlay');
@@ -1352,7 +1679,8 @@ window.addEventListener('popstate', (e) => {
     closeOverlay('detailOverlay');
     renderExhibitionView(state.id);
   }else if(state.view === 'entry'){
-    renderExhibitionView(state.exId).then(()=> renderEntryDetailView(state.entryId));
+    await renderExhibitionView(state.exId);
+    renderEntryDetailView(state.entryId);
   }
 });
 
