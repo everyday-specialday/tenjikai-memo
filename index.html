@@ -181,6 +181,33 @@
   @media (max-width:520px){
     .fab{ left:auto; right:20px; transform:none; }
   }
+  .fab-search{
+    position:fixed;
+    left:50%; transform:translateX(calc(-260px + 100% - 68px));
+    bottom:24px;
+    max-width:520px;
+    background:var(--ink);
+    color:#fff;
+    border:none;
+    width:56px; height:56px;
+    border-radius:50%;
+    box-shadow:0 4px 14px rgba(30,42,36,0.35);
+    cursor:pointer;
+    z-index:15;
+    display:flex; align-items:center; justify-content:center;
+  }
+  @media (max-width:520px){
+    .fab-search{ left:auto; right:88px; transform:none; }
+  }
+  .search-active-bar{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:#EAF1EC; border:1px solid var(--accent);
+    border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:12.5px; color:var(--ink);
+  }
+  .search-active-bar button{
+    background:none; border:none; color:var(--accent); font-weight:700; font-size:12.5px;
+    cursor:pointer; flex-shrink:0; white-space:nowrap;
+  }
 
   /* Overlay / forms */
   .overlay{
@@ -431,6 +458,34 @@ function sortExhibitionsByName(arr){
 }
 function sortEntriesByCompany(arr){
   return [...arr].sort((a,b)=> jaCollator.compare(entrySortKey(a), entrySortKey(b)));
+}
+
+/* ---------- 検索・絞り込み ---------- */
+const SEARCH_ICON_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.5" y1="15.5" x2="21" y2="21"/></svg>';
+let _activeSearch = null; // { scope:'exhibition'|'global', exId, keyword, industry }
+// 個別記録に記載されているすべての内容を対象にキーワード検索する
+function _entryMatchesKeyword(en, keyword){
+  if(!keyword) return true;
+  const kw = keyword.trim().toLowerCase();
+  if(!kw) return true;
+  const fields = [
+    en.company, en.furigana, en.industry, en.contact, en.email, en.memo,
+    typeLabelsJoined(en), fmtDate(en.date)
+  ];
+  return fields.some(f => (f||'').toString().toLowerCase().includes(kw));
+}
+function _entryMatchesIndustry(en, industry){
+  if(!industry) return true;
+  return (en.industry||'').trim() === industry;
+}
+function _buildIndustryOptions(entries, selected){
+  const industries = [...new Set(entries.map(en => (en.industry||'').trim()).filter(Boolean))];
+  industries.sort((a,b)=> jaCollator.compare(a,b));
+  let html = `<option value="">すべて</option>`;
+  for(const ind of industries){
+    html += `<option value="${esc(ind)}" ${selected===ind?'selected':''}>${esc(ind)}</option>`;
+  }
+  return html;
 }
 
 function showToast(msg){
@@ -964,6 +1019,12 @@ async function renderHome(){
     </div>`;
 
   const main = document.getElementById('main');
+
+  if(_activeSearch && _activeSearch.scope === 'global'){
+    await _renderGlobalSearchResults();
+    return;
+  }
+
   main.innerHTML = `<div id="folderList"></div>`;
   const list = document.getElementById('folderList');
 
@@ -992,6 +1053,161 @@ async function renderHome(){
     </div>`;
   }
   list.innerHTML = html;
+
+  const searchFab = document.createElement('button');
+  searchFab.className = 'fab';
+  searchFab.style.background = 'var(--ink)';
+  searchFab.innerHTML = SEARCH_ICON_SVG;
+  searchFab.setAttribute('aria-label', '検索');
+  searchFab.onclick = () => openGlobalSearch();
+  main.appendChild(searchFab);
+}
+
+/* ---------- 検索：展示会ごと ---------- */
+async function openExhibitionSearch(exId){
+  const entries = await loadEntries(exId);
+  const current = (_activeSearch && _activeSearch.scope==='exhibition' && _activeSearch.exId===exId) ? _activeSearch : { keyword:'', industry:'' };
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'searchOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>検索・絞り込み</h2>
+        <button class="close" onclick="closeOverlay('searchOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>業種で絞り込み</label>
+          <select id="searchIndustry">${_buildIndustryOptions(entries, current.industry)}</select>
+        </div>
+        <div class="field">
+          <label>キーワード検索（記録に入力したすべての内容が対象です）</label>
+          <input type="text" id="searchKeyword" value="${esc(current.keyword)}" placeholder="例）会社名、担当者名、メモの一部など">
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-secondary" onclick="clearExhibitionSearch('${exId}')">クリア</button>
+        <button class="btn-primary" onclick="applyExhibitionSearch('${exId}')">検索する</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+function applyExhibitionSearch(exId){
+  const keyword = document.getElementById('searchKeyword').value.trim();
+  const industry = document.getElementById('searchIndustry').value;
+  _activeSearch = (keyword || industry) ? { scope:'exhibition', exId, keyword, industry } : null;
+  closeOverlay('searchOverlay');
+  renderExhibitionView(exId);
+}
+function clearExhibitionSearch(exId){
+  _activeSearch = null;
+  closeOverlay('searchOverlay');
+  renderExhibitionView(exId);
+}
+
+/* ---------- 検索：全展示会から ---------- */
+async function openGlobalSearch(){
+  let allEntries = [];
+  for(const ex of exhibitions){
+    allEntries = allEntries.concat(await loadEntries(ex.id));
+  }
+  const current = (_activeSearch && _activeSearch.scope==='global') ? _activeSearch : { keyword:'', industry:'' };
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.id = 'searchOverlay';
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>検索・絞り込み（全展示会）</h2>
+        <button class="close" onclick="closeOverlay('searchOverlay')">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <label>業種で絞り込み</label>
+          <select id="searchIndustry">${_buildIndustryOptions(allEntries, current.industry)}</select>
+        </div>
+        <div class="field">
+          <label>キーワード検索（記録に入力したすべての内容が対象です）</label>
+          <input type="text" id="searchKeyword" value="${esc(current.keyword)}" placeholder="例）会社名、担当者名、メモの一部など">
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-secondary" onclick="clearGlobalSearch()">クリア</button>
+        <button class="btn-primary" onclick="applyGlobalSearch()">検索する</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+function applyGlobalSearch(){
+  const keyword = document.getElementById('searchKeyword').value.trim();
+  const industry = document.getElementById('searchIndustry').value;
+  _activeSearch = (keyword || industry) ? { scope:'global', keyword, industry } : null;
+  closeOverlay('searchOverlay');
+  renderHome();
+}
+function clearGlobalSearch(){
+  _activeSearch = null;
+  closeOverlay('searchOverlay');
+  renderHome();
+}
+async function _renderGlobalSearchResults(){
+  const main = document.getElementById('main');
+  const { keyword, industry } = _activeSearch;
+  let results = [];
+  for(const ex of exhibitions){
+    const entries = await loadEntries(ex.id);
+    for(const en of entries){
+      if(_entryMatchesIndustry(en, industry) && _entryMatchesKeyword(en, keyword)){
+        results.push({ ex, en });
+      }
+    }
+  }
+  results.sort((a,b)=> jaCollator.compare(entrySortKey(a.en), entrySortKey(b.en)));
+
+  const condText = [industry ? `業種：${esc(industry)}` : '', keyword ? `キーワード：${esc(keyword)}` : ''].filter(Boolean).join('　/　');
+  let html = `<div class="search-active-bar">
+    <span>絞り込み中：${results.length}件${condText ? `（${condText}）` : ''}</span>
+    <button onclick="clearGlobalSearch()">✕ 解除</button>
+  </div>`;
+
+  if(results.length === 0){
+    html += `<div class="empty"><div class="glyph">🔍</div><p>条件に一致する記録がありません。</p></div>`;
+  }else{
+    html += '<div>';
+    for(const { ex, en } of results){
+      const types = getEntryTypes(en);
+      const photos = getEntryPhotos(en);
+      const thumbSrc = photos[0] || en.businessCardPhoto;
+      html += `<div class="entry-card" onclick="jumpToEntry('${ex.id}','${en.id}')">
+        <div class="entry-thumb" style="${thumbSrc ? `background-image:url('${thumbSrc}')` : ''}">${thumbSrc ? '' : '写真\nなし'}${photos.length > 1 ? `<span class="photo-count-badge">${photos.length}</span>` : ''}</div>
+        <div class="entry-info">
+          <div class="entry-top"><div class="entry-company">${esc(en.company) || '（社名未入力）'}</div></div>
+          <div class="entry-meta" style="color:var(--accent);font-weight:600;">${esc(ex.name)}</div>
+          ${types.length ? `<div class="entry-tags">${types.map(t=>`<span class="tag ${t}">${typeLabel(t)}</span>`).join('')}</div>` : ''}
+          <div class="entry-meta">${esc(en.industry||'')}${en.industry && en.contact ? ' ・ ' : ''}${esc(en.contact||'')} ・ ${fmtDate(en.date)}</div>
+          ${en.memo ? `<div class="entry-memo">${esc(en.memo)}</div>` : ''}
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+  main.innerHTML = html;
+
+  const searchFab = document.createElement('button');
+  searchFab.className = 'fab';
+  searchFab.style.background = 'var(--ink)';
+  searchFab.innerHTML = SEARCH_ICON_SVG;
+  searchFab.setAttribute('aria-label', '検索');
+  searchFab.onclick = () => openGlobalSearch();
+  main.appendChild(searchFab);
+}
+async function jumpToEntry(exId, entryId){
+  _activeSearch = null; // 記録を開いたら絞り込み状態は解除する
+  await openExhibition(exId);
+  await openEntryDetail(entryId);
 }
 
 /* ---------- rendering: exhibition detail ---------- */
@@ -1027,27 +1243,52 @@ async function renderExhibitionView(id){
     return;
   }
 
-  // 五十音順（出展社名）
-  const sorted = sortEntriesByCompany(entries);
-  let html = overviewHtml + '<div>';
-  for(const en of sorted){
-    const types = getEntryTypes(en);
-    const photos = getEntryPhotos(en);
-    const thumbSrc = photos[0] || en.businessCardPhoto;
-    html += `<div class="entry-card" onclick="openEntryDetail('${en.id}')">
-      <div class="entry-thumb" style="${thumbSrc ? `background-image:url('${thumbSrc}')` : ''}">${thumbSrc ? '' : '写真\nなし'}${photos.length > 1 ? `<span class="photo-count-badge">${photos.length}</span>` : ''}</div>
-      <div class="entry-info">
-        <div class="entry-top">
-          <div class="entry-company">${esc(en.company) || '（社名未入力）'}</div>
-        </div>
-        ${types.length ? `<div class="entry-tags">${types.map(t=>`<span class="tag ${t}">${typeLabel(t)}</span>`).join('')}</div>` : ''}
-        <div class="entry-meta">${esc(en.industry||'')}${en.industry && en.contact ? ' ・ ' : ''}${esc(en.contact||'')} ・ ${fmtDate(en.date)}</div>
-        ${en.memo ? `<div class="entry-memo">${esc(en.memo)}</div>` : ''}
-      </div>
+  const searchActive = _activeSearch && _activeSearch.scope==='exhibition' && _activeSearch.exId===id;
+  const filtered = searchActive
+    ? entries.filter(en => _entryMatchesIndustry(en, _activeSearch.industry) && _entryMatchesKeyword(en, _activeSearch.keyword))
+    : entries;
+
+  const searchBarHtml = searchActive ? (()=>{
+    const condText = [_activeSearch.industry ? `業種：${esc(_activeSearch.industry)}` : '', _activeSearch.keyword ? `キーワード：${esc(_activeSearch.keyword)}` : ''].filter(Boolean).join('　/　');
+    return `<div class="search-active-bar">
+      <span>絞り込み中：${filtered.length}件${condText ? `（${condText}）` : ''}</span>
+      <button onclick="clearExhibitionSearch('${id}')">✕ 解除</button>
     </div>`;
+  })() : '';
+
+  // 五十音順（出展社名）
+  const sorted = sortEntriesByCompany(filtered);
+  let html = overviewHtml + searchBarHtml;
+  if(sorted.length === 0){
+    html += `<div class="empty"><div class="glyph">🔍</div><p>条件に一致する記録がありません。</p></div>`;
+  }else{
+    html += '<div>';
+    for(const en of sorted){
+      const types = getEntryTypes(en);
+      const photos = getEntryPhotos(en);
+      const thumbSrc = photos[0] || en.businessCardPhoto;
+      html += `<div class="entry-card" onclick="openEntryDetail('${en.id}')">
+        <div class="entry-thumb" style="${thumbSrc ? `background-image:url('${thumbSrc}')` : ''}">${thumbSrc ? '' : '写真\nなし'}${photos.length > 1 ? `<span class="photo-count-badge">${photos.length}</span>` : ''}</div>
+        <div class="entry-info">
+          <div class="entry-top">
+            <div class="entry-company">${esc(en.company) || '（社名未入力）'}</div>
+          </div>
+          ${types.length ? `<div class="entry-tags">${types.map(t=>`<span class="tag ${t}">${typeLabel(t)}</span>`).join('')}</div>` : ''}
+          <div class="entry-meta">${esc(en.industry||'')}${en.industry && en.contact ? ' ・ ' : ''}${esc(en.contact||'')} ・ ${fmtDate(en.date)}</div>
+          ${en.memo ? `<div class="entry-memo">${esc(en.memo)}</div>` : ''}
+        </div>
+      </div>`;
+    }
+    html += '</div>';
   }
-  html += '</div>';
   main.innerHTML = html;
+
+  const searchFab = document.createElement('button');
+  searchFab.className = 'fab-search';
+  searchFab.innerHTML = SEARCH_ICON_SVG;
+  searchFab.setAttribute('aria-label', '検索');
+  searchFab.onclick = () => openExhibitionSearch(id);
+  main.appendChild(searchFab);
 
   const fab = document.createElement('button');
   fab.className = 'fab';
